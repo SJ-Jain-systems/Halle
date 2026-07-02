@@ -22,6 +22,7 @@ mkdir -p logs results
 module purge
 module load miniforge
 module load cuda   # match the CUDA version your torch/vllm build expects
+source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate halle
 
 cd "$SLURM_SUBMIT_DIR"

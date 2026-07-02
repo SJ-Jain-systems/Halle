@@ -19,6 +19,7 @@ mkdir -p logs data/analysis
 
 module purge
 module load miniforge
+source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate halle
 
 cd "$SLURM_SUBMIT_DIR"

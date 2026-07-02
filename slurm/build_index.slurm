@@ -19,6 +19,10 @@ mkdir -p logs data
 
 module purge
 module load miniforge  # or `anaconda`/`python` — check `module avail` on your Rivanna instance
+# `conda activate` needs its shell function sourced explicitly here — a batch
+# script runs non-interactively, so the usual .bashrc-triggered conda init
+# never fires and a bare `conda activate` silently no-ops (no error, wrong env).
+source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate halle   # conda env created per docs/RUNNING_ON_RIVANNA.md step 0
 
 cd "$SLURM_SUBMIT_DIR"

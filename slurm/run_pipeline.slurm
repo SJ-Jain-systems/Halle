@@ -32,6 +32,7 @@ mkdir -p logs data
 module purge
 module load miniforge
 module load cuda
+source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate halle
 
 cd "$SLURM_SUBMIT_DIR"
