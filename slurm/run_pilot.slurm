@@ -22,11 +22,12 @@ mkdir -p logs results
 module purge
 module load miniforge
 module load cuda   # match the CUDA version your torch/vllm build expects
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate halle
+
+# See slurm/build_index.slurm for why this bypasses `conda activate`.
+PYTHON_BIN="$HOME/.conda/envs/halle/bin/python"
 
 cd "$SLURM_SUBMIT_DIR"
-python -m src.run_pilot \
+"$PYTHON_BIN" -m src.run_pilot \
     --sample data/sampled_articles.csv \
     --backend vllm \
     --tensor-parallel-size 4

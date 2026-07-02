@@ -19,9 +19,10 @@ mkdir -p logs data/analysis
 
 module purge
 module load miniforge
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate halle
+
+# See slurm/build_index.slurm for why this bypasses `conda activate`.
+PYTHON_BIN="$HOME/.conda/envs/halle/bin/python"
 
 cd "$SLURM_SUBMIT_DIR"
-python -m src.merge_shards --glob "data/demographics_table.shard*.csv" --out data/demographics_table.csv
-python -m src.analyze_trends --table data/demographics_table.csv --out-dir data/analysis
+"$PYTHON_BIN" -m src.merge_shards --glob "data/demographics_table.shard*.csv" --out data/demographics_table.csv
+"$PYTHON_BIN" -m src.analyze_trends --table data/demographics_table.csv --out-dir data/analysis

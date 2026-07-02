@@ -227,6 +227,16 @@ of demographic reporting, year by year and by stage
 
 ## Troubleshooting
 
+- **`ModuleNotFoundError` for a package you know you installed (e.g. `lxml`)
+  when a SLURM script runs, even though `pytest` works fine interactively**:
+  `conda activate halle` can silently fail to rewrite `PATH` in some Rivanna
+  shell configurations — `conda env list` will still claim `halle` is
+  active, but `python`/`sys.executable` resolve to the base miniforge
+  install instead. Confirmed live, not hypothetical. The SLURM scripts in
+  this repo work around it by calling
+  `$HOME/.conda/envs/halle/bin/python` directly instead of relying on
+  `conda activate` — if you hit this outside those scripts, use the same
+  absolute-path workaround rather than debugging `conda activate` further.
 - **`CorpusNotFoundError` from `src/allofplos_client.py`**: `PLOS_CORPUS`
   isn't set or doesn't contain XML files yet — redo step 1.
 - **vLLM OOM on model load**: the tensor-parallel size doesn't provide

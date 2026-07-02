@@ -32,14 +32,15 @@ mkdir -p logs data
 module purge
 module load miniforge
 module load cuda
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate halle
+
+# See slurm/build_index.slurm for why this bypasses `conda activate`.
+PYTHON_BIN="$HOME/.conda/envs/halle/bin/python"
 
 cd "$SLURM_SUBMIT_DIR"
 
 SHARD_COUNT=8  # must match --array above (array goes 0..SHARD_COUNT-1)
 
-python -m src.run_pipeline \
+"$PYTHON_BIN" -m src.run_pipeline \
     --index data/corpus_index.csv \
     --out "data/demographics_table.shard${SLURM_ARRAY_TASK_ID}.csv" \
     --backend vllm \

@@ -19,13 +19,15 @@ mkdir -p logs data
 
 module purge
 module load miniforge  # or `anaconda`/`python` — check `module avail` on your Rivanna instance
-# `conda activate` needs its shell function sourced explicitly here — a batch
-# script runs non-interactively, so the usual .bashrc-triggered conda init
-# never fires and a bare `conda activate` silently no-ops (no error, wrong env).
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate halle   # conda env created per docs/RUNNING_ON_RIVANNA.md step 0
+
+# `conda activate` was unreliable at rewriting PATH in this environment (both
+# in batch jobs and interactively) — verified live that it left `python`
+# resolving to the base miniforge install instead of the `halle` env even
+# though `conda env list` reported `halle` as active. Calling the env's
+# interpreter by absolute path sidesteps that entirely.
+PYTHON_BIN="$HOME/.conda/envs/halle/bin/python"
 
 cd "$SLURM_SUBMIT_DIR"
-python -m src.build_corpus_index \
+"$PYTHON_BIN" -m src.build_corpus_index \
     --corpus-dir "${PLOS_CORPUS:-$HOME/allofplos_corpus}" \
     --out data/corpus_index.csv
