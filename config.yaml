@@ -1,0 +1,14 @@
+# Model choice: docs/DECISIONS.md #3
+default_model: meta-llama/Llama-3.3-70B-Instruct
+
+candidate_models:
+  - meta-llama/Llama-3.3-70B-Instruct
+  - mistralai/Mistral-7B-Instruct-v0.3
+
+plos:
+  journal_key: PLoSONE
+  article_type: "Research Article"
+
+sampling:
+  per_subfield: 2
+  seed: 42
