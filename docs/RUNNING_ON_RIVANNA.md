@@ -6,14 +6,16 @@ familiarity with `sbatch`/`squeue` but not with this specific repo.
 
 **Caveat up front:** this repo was built in a sandbox with no access to
 Rivanna, no GPU, and no network path to `huggingface.co` or PLOS's
-infrastructure, so nothing below has been run end-to-end on real Rivanna
+infrastructure, so most of this hasn't been run end-to-end on real Rivanna
 hardware. Module names, partition names, and GPU types are Rivanna's as of
 early 2026 — run `module avail`, `allocations`, and `sinfo -o "%P %G"` to
 confirm current names before submitting, since these do change. Everything
 that *can* be verified without a GPU (the parsing, filtering, sampling, and
-aggregation logic) has 25 passing unit tests — see `pytest` output — so the
-stages you should trust immediately are 1–3 below; treat the GPU stages as
-"designed and ready to debug," not "guaranteed to run unmodified."
+aggregation logic, plus step 1's `PLOS_CORPUS` env var and download function
+— confirmed against the actual installed `allofplos` package source, not
+guessed) has 25 passing unit tests — see `pytest` output — so the stages you
+should trust immediately are 1–3 below; treat the GPU stages as "designed
+and ready to debug," not "guaranteed to run unmodified."
 
 ## Pipeline stages
 
@@ -81,26 +83,38 @@ is done, nothing else in the pipeline touches the network.
 
 1. Pick a storage location with real quota — **not your home directory**.
    `/scratch/$USER` or your group's `/project` allocation are the usual
-   choices on Rivanna; check `hdquota` / `/project` allocation size first.
-   The full corpus (all PLOS journals) runs to tens of GB; if you can
-   pre-filter to just PLOS ONE while downloading, do that instead.
-2. Point the pipeline at wherever you put it:
+   choices on Rivanna; check available space first (`df -h /scratch/$USER`).
+   The corpus zip covers **every PLOS journal**, not just PLOS ONE — allofplos
+   doesn't filter at download time (`MIN_FILES_FOR_VALID_CORPUS = 200000` in
+   its source, so expect a large, multi-hour download+extract). Our own
+   `src/build_corpus_index.py` does the PLOS ONE / subfield filtering
+   afterward, locally.
+2. Set the corpus directory (allofplos's own env var — confirmed against the
+   installed package source, `allofplos.get_corpus_dir()`):
    ```bash
-   export ALLOFPLOS_CORPUS_DIR=/scratch/$USER/allofplos_corpus
-   mkdir -p "$ALLOFPLOS_CORPUS_DIR"
+   export PLOS_CORPUS=/scratch/$USER/allofplos_corpus
+   mkdir -p "$PLOS_CORPUS"
    ```
-   Add that `export` to your shell profile or the top of each SLURM script
-   so every later step finds it.
-3. Follow the sync instructions on github.com/PLOS/allofplos's README for
-   the version of the package you installed (the corpus bootstrap mechanism
-   has changed across allofplos releases — check the README for whichever
-   version `pip install allofplos` gave you rather than trusting a
-   hardcoded command here). Run it from the login node.
+   Add that `export` to your shell profile (or the top of each SLURM script)
+   so every later step finds it — `src/allofplos_client.py` reads this same
+   variable.
+3. Run the sync. `pip install allofplos` has no CLI entrypoint (no console
+   script) — call the download function directly. This is a large, long-running
+   download; run it inside `tmux`/`screen` on the login node so it survives a
+   disconnected session:
+   ```bash
+   tmux new -s corpus-sync
+   python -c "from allofplos.corpus.plos_corpus import create_local_plos_corpus; create_local_plos_corpus(directory='$PLOS_CORPUS')"
+   # Ctrl-b d to detach; `tmux attach -t corpus-sync` to check back in
+   ```
+   This downloads `https://allof.plos.org/allofplos.zip` and extracts every
+   article XML into `$PLOS_CORPUS`. You'll see `tqdm` progress bars for both
+   the download and the extraction.
 4. Sanity check:
    ```bash
    python -c "from src.allofplos_client import corpus_size; print(corpus_size())"
    ```
-   should print a large number (tens of thousands) once the sync is done.
+   should print a large number (hundreds of thousands) once the sync is done.
 
 ## Step 2: build the filtered corpus index
 
@@ -213,7 +227,7 @@ of demographic reporting, year by year and by stage
 
 ## Troubleshooting
 
-- **`CorpusNotFoundError` from `src/allofplos_client.py`**: `ALLOFPLOS_CORPUS_DIR`
+- **`CorpusNotFoundError` from `src/allofplos_client.py`**: `PLOS_CORPUS`
   isn't set or doesn't contain XML files yet — redo step 1.
 - **vLLM OOM on model load**: the tensor-parallel size doesn't provide
   enough combined GPU memory for the model; request more/bigger GPUs or

@@ -23,5 +23,5 @@ source activate halle   # conda env created per docs/RUNNING_ON_RIVANNA.md step 
 
 cd "$SLURM_SUBMIT_DIR"
 python -m src.build_corpus_index \
-    --corpus-dir "${ALLOFPLOS_CORPUS_DIR:-$HOME/allofplos_corpus}" \
+    --corpus-dir "${PLOS_CORPUS:-$HOME/allofplos_corpus}" \
     --out data/corpus_index.csv
