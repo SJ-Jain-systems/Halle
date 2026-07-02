@@ -24,11 +24,10 @@ allofplos corpus (local XML mirror)
 data/corpus_index.csv           ← full filtered population (brief item 3)
         │  src/sample_articles.py
         ▼
-data/sampled_articles.csv       ← 10-article pilot (brief item "compare LLMs")
-        │  src/compare_llms.py  (both candidate models)
+data/sampled_articles.csv       ← 10-article pilot
+        │  src/run_pilot.py     (Llama-3.3-70B-Instruct, docs/DECISIONS.md #3)
         ▼
-results/<model>/<doi>.json      ← score against docs/SCORING_RUBRIC.md,
-                                   confirm docs/DECISIONS.md #3
+results/<model>/<doi>.json      ← QA spot-check against docs/SCORING_RUBRIC.md
         │
         │  src/run_pipeline.py (chosen model, full corpus_index.csv)
         ▼
@@ -128,10 +127,10 @@ Fast, CPU-only — fine to run directly on the login node. Writes
 (`docs/DECISIONS.md` #2). Re-run with `--seed <n>` if you want a different
 draw; the default seed (42) is reproducible.
 
-## Step 4: pilot comparison — confirm the model choice
+## Step 4: pilot run — QA the chosen model before scaling up
 
-Both candidate models are gated on Hugging Face (Llama especially — you
-need to accept Meta's license on the model page first). On the login node:
+`meta-llama/Llama-3.3-70B-Instruct` is gated on Hugging Face — accept Meta's
+license on the model page, then on the login node:
 
 ```bash
 huggingface-cli login   # paste a token with read access, after accepting
@@ -139,20 +138,18 @@ huggingface-cli login   # paste a token with read access, after accepting
 export HF_HOME=/scratch/$USER/hf_cache   # keep weights off your home quota
 ```
 
-Then submit both pilot jobs (kept separate deliberately — see the comment
-in each script for why):
+Submit the pilot job:
 
 ```bash
-sbatch slurm/pilot_comparison_llama.slurm
-sbatch slurm/pilot_comparison_mistral.slurm
+sbatch slurm/run_pilot.slurm
 ```
 
-Each writes `results/<model>/<doi>.json` for all 10 pilot articles. Score
-both models' output against `docs/SCORING_RUBRIC.md` (this part is
-manual/human judgment — coverage, numeric accuracy, schema adherence,
-multi-sample handling). If Mistral-7B wins, update `default_model` in
-`config.yaml` before the next step; `docs/DECISIONS.md` #3 currently
-defaults to Llama-3.3-70B-Instruct.
+Writes `results/meta-llama__Llama-3.3-70B-Instruct/<doi>.json` for all 10
+pilot articles. This isn't a model comparison — the model choice is settled
+(`docs/DECISIONS.md` #3) — it's a QA spot-check: score the output against
+`docs/SCORING_RUBRIC.md` (coverage, numeric accuracy, schema adherence,
+multi-sample handling) to catch a bad prompt or a parsing bug on 10 articles
+rather than after burning GPU hours on the full corpus.
 
 **If Llama-3.3-70B-Instruct doesn't fit your GPU allocation** (needs
 roughly 140GB+ of GPU memory in bf16 across the tensor-parallel group): drop
@@ -163,8 +160,8 @@ just OOM.
 
 ## Step 5: run the full pipeline
 
-Once the model choice is confirmed, run every article in
-`data/corpus_index.csv` through it:
+Once the pilot output looks right, run every article in
+`data/corpus_index.csv` through the same model:
 
 ```bash
 sbatch slurm/run_pipeline.slurm
@@ -221,7 +218,7 @@ of demographic reporting, year by year and by stage
 - **vLLM OOM on model load**: the tensor-parallel size doesn't provide
   enough combined GPU memory for the model; request more/bigger GPUs or
   switch to a quantized checkpoint.
-- **`compare_llms`/`run_pipeline` can't reach huggingface.co from a compute
+- **`run_pilot`/`run_pipeline` can't reach huggingface.co from a compute
   node**: pre-download weights on the login node first (`huggingface-cli
   download <model_id>` into `$HF_HOME`) so the compute node loads from local
   cache instead of fetching live.

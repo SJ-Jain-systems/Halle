@@ -15,9 +15,11 @@ Source brief: see the three open decisions and their reasoning in
    (social, cognitive, developmental, clinical, quantitative), fixed random
    seed for reproducibility.
 3. **Model** — `meta-llama/Llama-3.3-70B-Instruct`, run locally on Rivanna
-   GPU nodes, pending confirmation from the pilot comparison against
-   `mistralai/Mistral-7B-Instruct-v0.3`. See
-   [`docs/SCORING_RUBRIC.md`](docs/SCORING_RUBRIC.md).
+   GPU nodes. Final choice, on accuracy grounds — see
+   [`docs/DECISIONS.md`](docs/DECISIONS.md) #3. The 10-article pilot still
+   runs through it as a QA spot-check
+   ([`docs/SCORING_RUBRIC.md`](docs/SCORING_RUBRIC.md)) before the full run,
+   not as a model comparison.
 
 **To actually run this on Rivanna, start with
 [`docs/RUNNING_ON_RIVANNA.md`](docs/RUNNING_ON_RIVANNA.md)** — it walks
@@ -29,8 +31,8 @@ troubleshooting.
 
 ```
 allofplos corpus → build_corpus_index → sample_articles (pilot)
-                                       → compare_llms (confirm model choice)
-                                       → run_pipeline (full corpus, chosen model)
+                                       → run_pilot (QA spot-check)
+                                       → run_pipeline (full corpus)
                                        → merge_shards → analyze_trends
 ```
 
@@ -45,14 +47,14 @@ src/
   sample_articles.py       draws the 10-article stratified pilot sample
   extract_demographics.py  prompt + schema + validation for demographic rows
   model_backend.py         local GPU inference (vLLM / transformers) for Rivanna
-  compare_llms.py          runs the pilot sample through each candidate model
+  run_pilot.py             runs the pilot sample through the chosen model for a QA spot-check
   run_pipeline.py          full-scale extraction over the entire filtered corpus
   merge_shards.py          combines SLURM-array shard outputs into one table
   analyze_trends.py        year-by-year / by-stage aggregation — the actual research answer
 docs/
   DECISIONS.md             the three decisions above, with reasoning
   RUNNING_ON_RIVANNA.md    step-by-step guide to running the full pipeline on Rivanna
-  SCORING_RUBRIC.md        rubric for picking a winner from the pilot
+  SCORING_RUBRIC.md        QA rubric for the pilot run
 slurm/                     SLURM batch scripts for every GPU/CPU stage
 tests/                     unit tests (fixture XML + mocked model calls, no GPU/network needed)
 ```
@@ -72,11 +74,11 @@ python -m src.build_corpus_index --out data/corpus_index.csv
 # 3. Draw the 10-article pilot sample
 python -m src.sample_articles --index data/corpus_index.csv --out data/sampled_articles.csv
 
-# 4. Confirm the model choice
-python -m src.compare_llms --sample data/sampled_articles.csv --model <model_id>
+# 4. QA the chosen model on the pilot before scaling up
+python -m src.run_pilot --sample data/sampled_articles.csv
 #    score results/ against docs/SCORING_RUBRIC.md
 
-# 5. Run the full pipeline with the chosen model
+# 5. Run the full pipeline
 python -m src.run_pipeline --index data/corpus_index.csv --out data/demographics_table.csv
 
 # 6. Answer the research question

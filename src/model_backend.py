@@ -1,7 +1,7 @@
 """Local GPU inference backends for Rivanna, where compute isn't the
 constraint — no hosted API, no rate limits. Both implement the ModelClient
 interface from src/extract_demographics.py (a `.generate(prompt) -> str`
-method), so either drops straight into extract_demographics()/compare_llms.py.
+method), so either drops straight into extract_demographics()/run_pilot.py/run_pipeline.py.
 
 vLLM is the recommended path for anything beyond the 10-article pilot: it
 batches requests and uses paged attention, which matters once you're running

@@ -54,9 +54,9 @@ quantitative psychology.
 
 Why stratify instead of pooling and sampling 10 uniformly at random: a
 uniform draw over all matching articles risks a subfield with more PLOS ONE
-output (e.g. social/cognitive) crowding out the others, and the whole point
-of the pilot is to see how each candidate LLM performs *across* subfields
-before committing to one model for the full run. 2×5 guarantees coverage.
+output (e.g. social/cognitive) crowding out the others, and the point of the
+pilot is to sanity-check the chosen model's extraction quality *across*
+subfields before spending GPU time on the full run. 2×5 guarantees coverage.
 
 Implementation: `src/sample_articles.py`, function `stratified_sample()`,
 reading from `data/corpus_index.csv` (no network). Seed defaults to `42`;
@@ -64,10 +64,10 @@ override with `--seed` for a different draw.
 
 ## 3. Model choice
 
-**Decision: `meta-llama/Llama-3.3-70B-Instruct`, pending confirmation from
-the 10-article pilot.**
+**Decision: `meta-llama/Llama-3.3-70B-Instruct`. Final — this is the only
+model the pipeline runs.**
 
-The brief names two candidates and asks for one:
+The brief named two candidates and asked for one to be picked:
 
 | | Mistral-7B-Instruct-v0.3 | Llama-3.3-70B-Instruct |
 |---|---|---|
@@ -76,17 +76,17 @@ The brief names two candidates and asks for one:
 | Structured extraction / instruction-following accuracy | Noticeably weaker on multi-field JSON extraction and numeric reasoning buried in prose | Materially stronger; better at not hallucinating percentages or missing a demographic subgroup |
 | Compute/cost | Runs on a single consumer GPU or free-tier hosted inference | Needs multiple GPUs — a real constraint on hosted/shared infrastructure, not on a dedicated HPC allocation |
 
-Reasoning: extraction accuracy is the variable that matters most — a missed
-or hallucinated percentage directly biases the representativeness analysis
-that is the actual research question. The original writeup flagged compute
-cost as the reason this pick was tentative; running on Rivanna removes that
-constraint (dedicated GPU allocation, no per-token API cost), so the
-accuracy case for Llama-3.3-70B-Instruct now stands on its own without a
-cost tradeoff to weigh against it.
+Llama-3.3-70B-Instruct wins on the axis that actually matters here: a missed
+or hallucinated demographic percentage directly biases the
+representativeness analysis that is the whole point of this project, so
+extraction accuracy dominates the decision. The only reason to hedge toward
+Mistral-7B would be compute cost, and running on Rivanna (dedicated GPU
+allocation, no per-token API cost, no rate limits) removes that constraint
+entirely — there's no real tradeoff left to weigh, so there's no reason to
+keep Mistral in the loop as a second candidate.
 
-**Still a reasoned default, not a validated result** — confirm it against
-the pilot before committing to a full-corpus run. `src/compare_llms.py` runs
-both models on the 10 sampled articles (`slurm/pilot_comparison_llama.slurm`,
-`slurm/pilot_comparison_mistral.slurm`); score the output against
-`docs/SCORING_RUBRIC.md` and switch `default_model` in `config.yaml` if
-Mistral-7B wins the pilot.
+`src/run_pilot.py` (`slurm/run_pilot.slurm`) still runs the 10-article pilot
+through Llama-3.3-70B-Instruct before the full corpus run — not to compare
+it against anything, but as a QA spot-check (`docs/SCORING_RUBRIC.md`) that
+extraction quality looks right across all 5 subfields before spending real
+GPU time on ~thousands of articles.

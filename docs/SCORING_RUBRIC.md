@@ -1,8 +1,9 @@
-# LLM comparison rubric (10-article pilot)
+# Pilot QA rubric (10-article pilot)
 
-Used to score each model's output from `src/compare_llms.py` against a
-human-coded "gold" answer for the same 10 articles. Score each article 0-4 on
-each axis, then average.
+Used to spot-check `meta-llama/Llama-3.3-70B-Instruct`'s output from
+`src/run_pilot.py` against a human-coded "gold" answer for the same 10
+articles, before committing GPU time to the full corpus run
+(`src/run_pipeline.py`). Score each article 0-4 on each axis, then average.
 
 | Axis | 0 | 2 | 4 |
 |---|---|---|---|
@@ -11,11 +12,11 @@ each axis, then average.
 | **Schema adherence** | Output isn't valid JSON / missing required keys | Valid JSON, minor field-naming drift | Matches the schema in `src/extract_demographics.py` exactly |
 | **Multi-sample handling** | Collapsed multiple study samples into one row | Split samples but mislabeled `sample_id` | Correctly emitted one row per distinct sample, all sharing the article DOI |
 
-A model "wins" the pilot if it has the higher mean total across the 10
-articles. On Rivanna, compute isn't the constraint it would be on hosted
-inference, so ties go to whichever model scored higher on **numeric
-accuracy** specifically — that's the axis most likely to bias the downstream
-representativeness analysis if it's wrong.
+A mean score below ~3/4 on **numeric accuracy** or **schema adherence**
+across the 10 pilot articles is the signal to stop and debug the prompt
+(`src/extract_demographics.py::EXTRACTION_PROMPT_TEMPLATE`) rather than
+proceeding straight to the full-corpus run — errors here propagate directly
+into the representativeness analysis.
 
-Record raw scores in `results/scores.csv` (doi, model, coverage, numeric,
-schema, multi_sample, notes).
+Record raw scores in `results/scores.csv` (doi, coverage, numeric, schema,
+multi_sample, notes).

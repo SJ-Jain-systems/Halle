@@ -1,10 +1,6 @@
 # Model choice: docs/DECISIONS.md #3
 default_model: meta-llama/Llama-3.3-70B-Instruct
 
-candidate_models:
-  - meta-llama/Llama-3.3-70B-Instruct
-  - mistralai/Mistral-7B-Instruct-v0.3
-
 corpus:
   journal: "PLOS ONE"
   article_type: "research-article"
