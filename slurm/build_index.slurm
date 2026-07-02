@@ -19,7 +19,7 @@ mkdir -p logs data
 
 module purge
 module load miniforge  # or `anaconda`/`python` — check `module avail` on your Rivanna instance
-source activate halle   # conda env created per docs/RUNNING_ON_RIVANNA.md step 0
+conda activate halle   # conda env created per docs/RUNNING_ON_RIVANNA.md step 0
 
 cd "$SLURM_SUBMIT_DIR"
 python -m src.build_corpus_index \

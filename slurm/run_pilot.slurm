@@ -22,7 +22,7 @@ mkdir -p logs results
 module purge
 module load miniforge
 module load cuda   # match the CUDA version your torch/vllm build expects
-source activate halle
+conda activate halle
 
 cd "$SLURM_SUBMIT_DIR"
 python -m src.run_pilot \

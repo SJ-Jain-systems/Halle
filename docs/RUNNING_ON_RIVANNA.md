@@ -54,7 +54,7 @@ git clone <this-repo-url> ~/halle && cd ~/halle
 module purge
 module load miniforge   # `module avail miniforge anaconda python` if this name is wrong
 conda create -n halle python=3.11 -y
-source activate halle
+conda activate halle
 
 pip install -r requirements.txt
 ```

@@ -19,7 +19,7 @@ mkdir -p logs data/analysis
 
 module purge
 module load miniforge
-source activate halle
+conda activate halle
 
 cd "$SLURM_SUBMIT_DIR"
 python -m src.merge_shards --glob "data/demographics_table.shard*.csv" --out data/demographics_table.csv

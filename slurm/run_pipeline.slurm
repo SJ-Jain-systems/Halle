@@ -32,7 +32,7 @@ mkdir -p logs data
 module purge
 module load miniforge
 module load cuda
-source activate halle
+conda activate halle
 
 cd "$SLURM_SUBMIT_DIR"
 
