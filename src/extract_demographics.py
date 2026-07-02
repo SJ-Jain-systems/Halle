@@ -8,7 +8,9 @@ three separate demographic samples yields three rows, all sharing the same
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
+from src.jats_xml import get_extraction_text
 
 REQUIRED_KEYS = {
     "doi",
@@ -98,3 +100,13 @@ def extract_demographics(doi: str, article_text: str, client: ModelClient) -> li
     prompt = build_prompt(doi, article_text)
     raw_output = client.generate(prompt)
     return parse_and_validate(raw_output, expected_doi=doi)
+
+
+def extract_demographics_from_xml(doi: str, xml_path: str, client: ModelClient) -> list[dict]:
+    """Convenience wrapper: pull Methods/Participants-first text straight out
+    of the local corpus XML (src/jats_xml.py) and extract from it. This is
+    what src/run_pipeline.py and src/compare_llms.py actually call — nothing
+    downloads full text over the network, it's already on disk.
+    """
+    article_text = get_extraction_text(xml_path)
+    return extract_demographics(doi, article_text, client)

@@ -1,4 +1,14 @@
-requests>=2.31
+# Core pipeline (no GPU needed)
+lxml>=5.0
 PyYAML>=6.0
-allofplos>=0.11
+pandas>=2.0
+matplotlib>=3.8
 pytest>=7.4
+
+# Local model inference on Rivanna GPU nodes (docs/RUNNING_ON_RIVANNA.md).
+# torch/vllm builds are CUDA-version-specific — install these separately
+# following the Rivanna-specific instructions in that doc rather than a
+# blind `pip install -r requirements.txt`.
+torch>=2.3
+vllm>=0.5
+transformers>=4.43

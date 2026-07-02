@@ -4,42 +4,44 @@ Source brief: `PLOS_ONE_PROJECT.pdf` — study of demographic representativeness
 in psychology research articles published in *PLOS ONE*, 2010–2026.
 
 This document records the three open decisions from the brief and the
-reasoning behind each. Code implementing these decisions lives in `src/`.
+reasoning behind each. Code implementing these decisions lives in `src/`;
+how to actually run it on Rivanna is in `docs/RUNNING_ON_RIVANNA.md`.
 
-## 1. Data access: Solr vs. `allofplos` (GitHub repo)
+## 1. Data access: `allofplos` only (revised — Solr dropped)
 
-**Decision: use both, for different jobs — Solr for discovery/filtering, `allofplos` for full-text retrieval.**
+**Decision: `allofplos` (github.com/PLOS/allofplos) is the sole data
+source. No Solr calls anywhere in this pipeline.**
 
-The brief lists these as alternatives, but they solve different problems and
-the brief's own metadata section (`subject` / `subject_level_1` "via Solr")
-already assumes Solr is in the loop:
+The original plan (see git history) split this into "Solr for discovery,
+allofplos for full text," using Solr's `subject_level_1` field to filter by
+psychology subfield. That's no longer how this pipeline works — the whole
+corpus (or the PLOS ONE slice of it) is synced locally once, and every
+filtering/discovery step that would have been a Solr query is now a local
+scan of the XML instead:
 
-| | PLOS Search API (Solr) | `allofplos` (github.com/PLOS/allofplos) |
-|---|---|---|
-| What it's good at | Fielded queries: filter by `subject_level_1` (subfield taxonomy), `article_type`, `publication_date`, journal, and page through results | Reliable, rate-limit-free full-text JATS XML for every PLOS article, kept in sync locally |
-| Weak point | Not meant for bulk full-text harvesting — PLOS explicitly discourages hammering Solr for full article bodies, and results are metadata/abstract-oriented | No query/faceting layer; you need a DOI list before it's useful |
-| Cost to us | Free, instant, no local storage | One-time local sync (large first download), then free/offline |
+- **Subject taxonomy** (brief item 4.c.i: `subject` and `subject_level_1`):
+  PLOS tags every article's JATS XML with `<subj-group
+  subj-group-type="Discipline">` blocks — nested `<subject>` elements
+  encoding the same taxonomy Solr exposed as `subject`/`subject_level_1`.
+  `src/jats_xml.py::get_subjects()` parses this directly: `subject_level_1`
+  is the top `<subject>` of each Discipline branch, `subject` is every
+  `<subject>` term found at any depth. This is a direct re-derivation of the
+  Solr fields, not a proxy for them — same semantics, no network call.
+- **Subfield / article-type / journal / date filtering** (brief item 3):
+  `src/build_corpus_index.py` scans every XML file in the local corpus once
+  and writes the matching population to `data/corpus_index.csv`.
+- **Full text for demographic extraction**: already local, since the whole
+  point of allofplos is a local mirror — `src/jats_xml.py::get_extraction_text()`
+  pulls Methods/Participants section text straight off disk.
 
-Our extraction task needs both capabilities: we must **find** articles by
-psychology subfield and time-stage, and then **read** their full
-Methods/Participants sections to pull out demographic percentages — Solr's
-metadata/abstract fields aren't sufficient for the second part.
-
-**Pipeline:**
-1. `src/plos_client.py :: search_articles()` queries Solr per subfield to get
-   candidate DOIs + metadata (`subject`, `subject_level_1`, `publication_date`,
-   author institution).
-2. `src/plos_client.py :: fetch_fulltext()` resolves each selected DOI to full
-   JATS XML via `allofplos`, for demographic extraction.
-
-This also directly satisfies brief item 4.c.i: "subject & subject_level_1 (via
-Solr)."
-
-**Caveat found while building this:** this sandbox's outbound network policy
-blocks both `api.plos.org` and `huggingface.co`. The client code is written
-and unit-tested against mocked responses, but nobody has run it against the
-live API yet — do that first, from an environment with normal internet
-access, before trusting `data/sampled_articles.csv`.
+Net effect: this pipeline makes zero calls to `api.plos.org` after the
+one-time corpus sync. Tradeoff versus the Solr-hybrid approach: the initial
+corpus download is a large one-time cost (see `docs/RUNNING_ON_RIVANNA.md`
+step 1 for size/storage guidance), and taxonomy parsing now depends on JATS
+XML structure being consistent across ~15 years of PLOS ONE articles — spot
+check `data/corpus_index.csv` against a handful of known articles after the
+first index build to confirm subfield tagging looks right before trusting it
+at scale.
 
 ## 2. Ten-article pilot sample
 
@@ -56,19 +58,14 @@ output (e.g. social/cognitive) crowding out the others, and the whole point
 of the pilot is to see how each candidate LLM performs *across* subfields
 before committing to one model for the full run. 2×5 guarantees coverage.
 
-Implementation: `src/sample_articles.py`, function `stratified_sample()`.
-Filters applied per brief item 3: `article_type:"Research Article"`, journal
-= PLOS ONE, no sample-size restriction. Seed defaults to `42`; override with
-`--seed` for a different draw.
-
-This step also has not been run against live data for the reason above —
-running `python -m src.sample_articles` from a networked machine will
-populate `data/sampled_articles.csv`.
+Implementation: `src/sample_articles.py`, function `stratified_sample()`,
+reading from `data/corpus_index.csv` (no network). Seed defaults to `42`;
+override with `--seed` for a different draw.
 
 ## 3. Model choice
 
-**Decision: `meta-llama/Llama-3.3-70B-Instruct`, pending confirmation from the
-10-article pilot.**
+**Decision: `meta-llama/Llama-3.3-70B-Instruct`, pending confirmation from
+the 10-article pilot.**
 
 The brief names two candidates and asks for one:
 
@@ -77,20 +74,19 @@ The brief names two candidates and asks for one:
 | Parameters | 7B | 70B |
 | Context window | 32K | 128K |
 | Structured extraction / instruction-following accuracy | Noticeably weaker on multi-field JSON extraction and numeric reasoning buried in prose | Materially stronger; better at not hallucinating percentages or missing a demographic subgroup |
-| Compute/cost | Runs on a single consumer GPU or free-tier hosted inference — cheap to scale to hundreds of articles | Needs a paid hosted endpoint or multi-GPU box |
+| Compute/cost | Runs on a single consumer GPU or free-tier hosted inference | Needs multiple GPUs — a real constraint on hosted/shared infrastructure, not on a dedicated HPC allocation |
 
-Reasoning: extraction accuracy is the variable that matters most here — a
-missed or hallucinated percentage directly biases the representativeness
-analysis that is the actual research question. At pilot scale (10 articles)
-the cost gap between the two models is negligible, so we should optimize for
-accuracy now and revisit cost only if/when scaling to the full corpus makes
-Llama-3.3-70B's compute cost a real constraint. If that happens, fall back to
-Mistral-7B-Instruct-v0.3 and expect a manual-QA/spot-check step to catch the
-accuracy gap.
+Reasoning: extraction accuracy is the variable that matters most — a missed
+or hallucinated percentage directly biases the representativeness analysis
+that is the actual research question. The original writeup flagged compute
+cost as the reason this pick was tentative; running on Rivanna removes that
+constraint (dedicated GPU allocation, no per-token API cost), so the
+accuracy case for Llama-3.3-70B-Instruct now stands on its own without a
+cost tradeoff to weigh against it.
 
-**This is a reasoned default, not a validated result** — nobody has run
-either model against this repo's Hugging Face IDs (no credentials/network in
-this sandbox). `src/compare_llms.py` is the harness for actually running both
-models on the 10 sampled articles and scoring them against
-`docs/SCORING_RUBRIC.md`; use its output to confirm or overturn this choice
-before scaling up.
+**Still a reasoned default, not a validated result** — confirm it against
+the pilot before committing to a full-corpus run. `src/compare_llms.py` runs
+both models on the 10 sampled articles (`slurm/pilot_comparison_llama.slurm`,
+`slurm/pilot_comparison_mistral.slurm`); score the output against
+`docs/SCORING_RUBRIC.md` and switch `default_model` in `config.yaml` if
+Mistral-7B wins the pilot.

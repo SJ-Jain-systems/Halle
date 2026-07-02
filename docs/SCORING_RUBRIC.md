@@ -12,7 +12,10 @@ each axis, then average.
 | **Multi-sample handling** | Collapsed multiple study samples into one row | Split samples but mislabeled `sample_id` | Correctly emitted one row per distinct sample, all sharing the article DOI |
 
 A model "wins" the pilot if it has the higher mean total across the 10
-articles. Ties go to the cheaper model (Mistral-7B) per `docs/DECISIONS.md`.
+articles. On Rivanna, compute isn't the constraint it would be on hosted
+inference, so ties go to whichever model scored higher on **numeric
+accuracy** specifically — that's the axis most likely to bias the downstream
+representativeness analysis if it's wrong.
 
 Record raw scores in `results/scores.csv` (doi, model, coverage, numeric,
 schema, multi_sample, notes).

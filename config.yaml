@@ -5,9 +5,11 @@ candidate_models:
   - meta-llama/Llama-3.3-70B-Instruct
   - mistralai/Mistral-7B-Instruct-v0.3
 
-plos:
-  journal_key: PLoSONE
-  article_type: "Research Article"
+corpus:
+  journal: "PLOS ONE"
+  article_type: "research-article"
+  min_year: 2010
+  max_year: 2026
 
 sampling:
   per_subfield: 2

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<article article-type="correction">
+  <front>
+    <journal-meta>
+      <journal-title-group><journal-title>PLOS ONE</journal-title></journal-title-group>
+    </journal-meta>
+    <article-meta>
+      <article-id pub-id-type="doi">10.1371/journal.pone.0077777</article-id>
+      <title-group><article-title>Correction: A study of clinical psychology</article-title></title-group>
+      <contrib-group>
+        <contrib contrib-type="author" corresp="yes">
+          <name><surname>Nguyen</surname></name>
+          <xref ref-type="aff" rid="aff1"/>
+        </contrib>
+      </contrib-group>
+      <aff id="aff1"><institution>Some University</institution></aff>
+      <pub-date pub-type="epub"><day>1</day><month>1</month><year>2020</year></pub-date>
+      <article-categories>
+        <subj-group subj-group-type="Discipline">
+          <subject>Biology and life sciences</subject>
+          <subj-group>
+            <subject>Psychology</subject>
+            <subj-group><subject>Clinical psychology</subject></subj-group>
+          </subj-group>
+        </subj-group>
+      </article-categories>
+    </article-meta>
+  </front>
+  <body>
+    <sec><title>Methods</title><p>No demographics here.</p></sec>
+  </body>
+</article>

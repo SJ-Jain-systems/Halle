@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<article article-type="research-article">
+  <front>
+    <journal-meta>
+      <journal-title-group>
+        <journal-title>PLOS ONE</journal-title>
+      </journal-title-group>
+    </journal-meta>
+    <article-meta>
+      <article-id pub-id-type="doi">10.1371/journal.pone.0012345</article-id>
+      <title-group>
+        <article-title>A study of social attitudes</article-title>
+      </title-group>
+      <contrib-group>
+        <contrib contrib-type="author" corresp="yes">
+          <name><surname>Smith</surname><given-names>Jane</given-names></name>
+          <xref ref-type="aff" rid="aff1"/>
+        </contrib>
+        <contrib contrib-type="author">
+          <name><surname>Doe</surname><given-names>John</given-names></name>
+          <xref ref-type="aff" rid="aff2"/>
+        </contrib>
+      </contrib-group>
+      <aff id="aff1"><institution>University of Virginia</institution></aff>
+      <aff id="aff2"><institution>Some Other University</institution></aff>
+      <pub-date pub-type="epub">
+        <day>10</day>
+        <month>5</month>
+        <year>2016</year>
+      </pub-date>
+      <article-categories>
+        <subj-group subj-group-type="Discipline">
+          <subject>Biology and life sciences</subject>
+          <subj-group>
+            <subject>Psychology</subject>
+            <subj-group>
+              <subject>Social psychology</subject>
+            </subj-group>
+          </subj-group>
+        </subj-group>
+        <subj-group subj-group-type="Discipline">
+          <subject>Medicine and health sciences</subject>
+        </subj-group>
+      </article-categories>
+    </article-meta>
+  </front>
+  <body>
+    <sec>
+      <title>Introduction</title>
+      <p>This study examines social attitudes across demographic groups.</p>
+    </sec>
+    <sec>
+      <title>Methods</title>
+      <sec>
+        <title>Participants</title>
+        <p>The final sample included 200 participants. Gender: 45% male, 55% female.
+        Race: 60% white, 20% black, 10% hispanic, 5% asian, 5% other.</p>
+      </sec>
+    </sec>
+    <sec>
+      <title>Results</title>
+      <p>We found significant effects of group membership on attitude change.</p>
+    </sec>
+  </body>
+</article>

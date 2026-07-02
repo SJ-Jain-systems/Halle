@@ -1,6 +1,10 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-data/sampled_articles.csv
+data/*.csv
+data/analysis/
 results/**/*.json
+logs/
 .env
+!tests/fixtures/**
+
