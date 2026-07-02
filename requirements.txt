@@ -5,6 +5,11 @@ pandas>=2.0
 matplotlib>=3.8
 pytest>=7.4
 
+# Needed only to sync the local corpus (docs/RUNNING_ON_RIVANNA.md step 1) —
+# the pipeline code itself parses the downloaded XML directly with lxml and
+# never imports this package.
+allofplos>=0.11
+
 # Local model inference on Rivanna GPU nodes (docs/RUNNING_ON_RIVANNA.md).
 # torch/vllm builds are CUDA-version-specific — install these separately
 # following the Rivanna-specific instructions in that doc rather than a
