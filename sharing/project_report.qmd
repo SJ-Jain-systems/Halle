@@ -21,25 +21,21 @@ in part on who was sampled. When an article omits the demographic composition of
 its participants, a reader cannot judge the scope of the claim, and a later
 meta-analysis cannot assess who the literature actually speaks for. This is the
 question of sample representativeness, and it has both a descriptive and a
-temporal dimension.
-
-I address both. First, at what rate do psychology articles report participant
+temporal dimension. I address both. First, at what rate do psychology articles report participant
 demographics (gender, race, education, and socioeconomic status)? Second, has
 that rate shifted over 2010 to 2026, and does the trajectory differ across
-subfields or across the disruption of the COVID-19 pandemic?
-
-I restrict attention to a single venue, PLOS ONE, for tractability. It is
+subfields or across the disruption of the COVID-19 pandemic? I restrict attention to a single venue, PLOS ONE, for tractability. It is
 high-volume, multidisciplinary, and fully open access, so the entire corpus is
 retrievable and machine-readable rather than locked behind paywalls. That is what
 makes a corpus-scale study of tens of thousands of articles feasible instead of a
-hand-coded sample of a few hundred.
-
-Because manual coding does not scale to that volume, I delegate the reading to a
+hand-coded sample of a few hundred. Because manual coding does not scale to that volume, I delegate the reading to a
 large language model. For each qualifying article, the model reads the methods
 text and returns the reported demographics in a fixed structured form, which I
-then aggregate into reporting-rate trends.
+then aggregate into reporting-rate trends. 
 
-## Temporal design
+Prob shorten this in the future, a whole lot of yapping for a design thats not complete 
+
+## Temporal design (from last meeting)
 
 To characterize change over time I partition the study window into four periods
 chosen to reflect distinct eras:
@@ -65,21 +61,18 @@ in how much detail, each demographic was reported:
 
 Two features of the schema are deliberate and consequential.
 
-The unit of analysis is the participant sample, not the article. A single article
+The unit of analysis is the participant sample and not the article. A single article
 may report several independent samples, and I code each as its own record, keyed
 to the shared article identifier (its DOI). Collapsing an article's samples into
 one record would discard genuine within-article variation and bias the
-reporting-rate estimates.
-
-Each record also carries article-level metadata: publication date, the
-corresponding author's institution, and the full PLOS subject taxonomy for the
+reporting-rate estimates. Each record also carries article-level metadata: publication date, the corresponding author's institution, and the full PLOS subject taxonomy for the
 article. These support subgroup analysis and provenance tracking.
 
 ## Inclusion criteria
 
 An article enters the corpus only if it is an empirical research article (not an
 editorial, correction, or review), published in PLOS ONE, classified by PLOS
-under psychology (any subfield), and dated between 2010 and 2026. I place no
+under psychology (any subfield), and dated between 2010 and 2026. I placed no
 lower bound on sample size.
 
 # Pipeline architecture
@@ -167,6 +160,8 @@ two mismatches. PLOS's controlled vocabulary contains no term "Quantitative
 psychology", so that category would have matched nothing. Conversely, PLOS
 employs several subfields the plan did not list, including Experimental
 psychology, Psychometrics, Behavior, and Emotions.
+
+[No quant psych, rip hopes n dreams of PLOS ONE]
 
 Rather than impose a preset list the taxonomy does not honor, I chose to include
 all subfields. The design accordingly became taxonomy-driven: I retain every
@@ -451,9 +446,6 @@ periods.
 
 # Reproducibility
 
-All code and documentation is version-controlled on GitHub (repository
-SJ-Jain-systems/Halle). Each stage is an independent, testable module:
-
 ```
 src/
   solr_client.py          discovery via the PLOS Solr search index
@@ -479,21 +471,23 @@ And the diagnostic scripts that isolated the schema drift and the 2015 gap are
 retained in the repository, so the evidentiary basis for each design decision
 remains inspectable.
 
-# Open questions
+# questions for the phD peeps
 
 Three decisions would benefit from input before the full run.
 
-1. Subfield scope. The taxonomy yields 23 psychology subfields, some broad
+1. The taxonomy yields 23 psychology subfields, some broad
    (Behavior, Emotions) and some tangential to human-participant research (for
    example animal-behavior work filed under Psychology, or Instinct). Do I
    analyze all 23, or restrict to a defined core of human-participant subfields,
-   and if so which?
+   and if so which? # Highkey ask to restrict some and which ones to restrict to.
 
 2. Coverage at the interval boundaries. Pre-2011 articles use the older tagging
    generation, and a fraction of 2025 to 2026 articles lack local full text. Are
    the earliest and latest years complete enough to support a fair longitudinal
-   comparison, or should I bound the analysis window (for example 2011 to 2024)?
+   comparison, or 
+
+
+    Should I bound the analysis window (for example 2011 to 2024)? Also explain 2015 having to use SOLR to fill the hole. PLOS ONE is a bit incomplete in 2015 and 2013, so the SOLR query is used to fill the gap.
 
 3. Validation threshold. What level of pilot accuracy, measured against the
-   scoring rubric, justifies proceeding to the full run, and who performs the
-   manual adjudication?
+   scoring rubric, justifies proceeding to the full run. I have manual adjudification of the pilot as a place holder at the moment, but I need to know what threshold of accuracy is acceptable to proceed with the full run.
