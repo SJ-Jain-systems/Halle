@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import csv
 import logging
+import os
 import random
 
 logger = logging.getLogger(__name__)
@@ -99,6 +100,17 @@ def write_csv(articles: list[dict], out_path: str) -> None:
             writer.writerow(article)
 
 
+def filter_to_local_xml(rows: list[dict]) -> list[dict]:
+    """Drop rows whose xml_path isn't present on disk — ~6% of the Solr index
+    is articles (mostly very recent) not in the local corpus snapshot, which
+    can't be full-text extracted, so they must not be drawn into the pilot."""
+    kept = [r for r in rows if r.get("xml_path") and os.path.exists(r["xml_path"])]
+    dropped = len(rows) - len(kept)
+    if dropped:
+        logger.info("Dropped %d/%d index rows with no local XML file", dropped, len(rows))
+    return kept
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
@@ -108,7 +120,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    rows = load_index(args.index)
+    rows = filter_to_local_xml(load_index(args.index))
     articles = stratified_sample(rows, per_subfield=args.per_subfield, seed=args.seed)
     write_csv(articles, args.out)
     subfields_covered = sorted({a["subfield"] for a in articles})
