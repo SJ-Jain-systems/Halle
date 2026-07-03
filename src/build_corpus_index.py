@@ -77,13 +77,18 @@ def to_row(meta: ArticleMetadata, subfields: list[str]) -> dict:
     }
 
 
-def build_index(corpus_dir: str, out_path: str) -> int:
+def build_index(corpus_dir: str, out_path: str, log_every: int = 5000) -> int:
     kept = 0
     scanned = 0
+    # Materialize the file list up front so we can log a total and give a
+    # meaningful "scanned N/TOTAL" progress readout with an implied ETA.
+    xml_paths = list(iter_corpus_xml(corpus_dir))
+    total = len(xml_paths)
+    logger.info("Found %d article XML files under %s; scanning...", total, corpus_dir)
     with open(out_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
         writer.writeheader()
-        for xml_path in iter_corpus_xml(corpus_dir):
+        for xml_path in xml_paths:
             scanned += 1
             try:
                 meta = parse_metadata(xml_path)
@@ -91,12 +96,14 @@ def build_index(corpus_dir: str, out_path: str) -> int:
                 logger.warning("Failed to parse %s, skipping", xml_path, exc_info=True)
                 continue
             ok, subfields = passes_inclusion_criteria(meta)
-            if not ok:
-                continue
-            writer.writerow(to_row(meta, subfields))
-            kept += 1
-            if scanned % 5000 == 0:
-                logger.info("Scanned %d articles, kept %d so far", scanned, kept)
+            if ok:
+                writer.writerow(to_row(meta, subfields))
+                kept += 1
+            if scanned % log_every == 0:
+                # Flush both the log and the CSV so `tail`/`wc -l` show live
+                # progress instead of sitting empty behind block buffering.
+                logger.info("Scanned %d/%d articles, kept %d so far", scanned, total, kept)
+                f.flush()
     logger.info("Done: scanned %d articles, kept %d matching inclusion criteria", scanned, kept)
     return kept
 

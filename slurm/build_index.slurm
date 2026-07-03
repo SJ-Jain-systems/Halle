@@ -28,6 +28,8 @@ module load miniforge  # or `anaconda`/`python` — check `module avail` on your
 PYTHON_BIN="$HOME/.conda/envs/halle/bin/python"
 
 cd "$SLURM_SUBMIT_DIR"
-"$PYTHON_BIN" -m src.build_corpus_index \
+# -u = unbuffered stdout/stderr, so progress log lines hit the .out file
+# immediately instead of sitting in a block buffer for the whole run.
+"$PYTHON_BIN" -u -m src.build_corpus_index \
     --corpus-dir "${PLOS_CORPUS:-$HOME/allofplos_corpus}" \
     --out data/corpus_index.csv
