@@ -8,8 +8,8 @@
 # get_extraction_text pulls the whole body but moves those sections to the front
 # so the model sees them first.
 #
-# The subject-tag functions were how we originally found psychology papers from
-# the files. We moved that job to the search engine because the files are
+# The subject-tag functions were how I originally found psychology papers from
+# the files. I moved that job to the search engine because the files are
 # missing tags for some years. These still read tags where they exist, and they
 # document how the tags are laid out.
 #
@@ -23,13 +23,13 @@ from dataclasses import dataclass, field
 
 from lxml import etree
 
-# Section headings we treat as probably where the demographics are.
+# Section headings I treat as probably where the demographics are.
 SECTION_TITLE_KEYWORDS = ("method", "participant", "sample", "procedure")
 
 
 @dataclass
 class ArticleMetadata:
-    # A tidy box holding everything we pull about one article.
+    # A tidy box holding everything I pull about one article.
     doi: str
     title: str
     journal: str
@@ -69,9 +69,9 @@ def get_article_type(tree: etree._ElementTree) -> str:
 
 
 def get_publication_date(tree: etree._ElementTree) -> _dt.date | None:
-    # PLOS records several dates: online, print, and so on. We try them in a
+    # PLOS records several dates: online, print, and so on. I try them in a
     # sensible order and take the first that gives a usable year. If month or day
-    # is missing we default to 1, since we mostly care about the year.
+    # is missing I default to 1, since I mostly care about the year.
     for pub_type in ("epub", "collection", "ppub", None):
         xpath = ".//pub-date[@pub-type='%s']" % pub_type if pub_type else ".//pub-date"
         node = tree.find(xpath)
@@ -125,9 +125,9 @@ def get_psychology_subfields(tree: etree._ElementTree) -> list[str]:
     """Return the subfield(s) sitting directly under a "Psychology" tag.
 
     Find the "Psychology" tag, then grab whatever is one level under it. That is
-    the subfield. This is why we get all 23 subfields instead of a hardcoded
-    five: we take whatever PLOS actually filed the paper under. If Psychology has
-    no child, we return "Psychology" on its own. Empty if the paper isn't under
+    the subfield. This is why I get all 23 subfields instead of a hardcoded
+    five: I take whatever PLOS actually filed the paper under. If Psychology has
+    no child, I return "Psychology" on its own. Empty if the paper isn't under
     Psychology at all.
     """
     subfields: list[str] = []
@@ -203,7 +203,7 @@ def parse_metadata(xml_path: str) -> ArticleMetadata:
 def get_extraction_text(xml_path: str) -> str:
     """Get the body text to hand the model, Methods/Participants first.
 
-    We keep the whole body but reorder it so Methods and Participants come first.
+    I keep the whole body but reorder it so Methods and Participants come first.
     That's where the demographics are, and models pay most attention to the start
     of a long prompt.
     """

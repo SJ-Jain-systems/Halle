@@ -1,9 +1,9 @@
 # NOTES
-# This is how we find the psychology papers. It asks PLOS's search engine
+# This is how I find the psychology papers. It asks PLOS's search engine
 # (Solr) for every PLOS ONE research article tagged as psychology, one year at
 # a time.
 #
-# We use the search engine instead of the downloaded files because the files
+# I use the search engine instead of the downloaded files because the files
 # are missing their subject tags for whole years. 2015 is basically empty in
 # the files. The search engine has the tags for every article.
 #
@@ -28,7 +28,7 @@ SOLR_URL = "https://api.plos.org/search"
 
 
 def _filter_queries(year: int) -> list[str]:
-    # These five conditions are the whole definition of a paper we want.
+    # These five conditions are the whole definition of a paper I want.
     # doc_type:full is not optional. Drop it and you get millions of fragments.
     return [
         "doc_type:full",
@@ -47,16 +47,16 @@ def fetch_year(
     timeout: float = 60.0,
 ) -> Iterator[dict]:
     """Return every psychology PLOS ONE research article for one year."""
-    # The engine won't hand back thousands at once. We ask in pages of 500 and
-    # move "start" forward until we've seen them all. The pause is politeness so
-    # we don't hammer PLOS.
+    # The engine won't hand back thousands at once. I ask in pages of 500 and
+    # move "start" forward until I've seen them all. The pause is politeness so
+    # I don't hammer PLOS.
     session = session or requests.Session()
     start = 0
     while True:
         params = {
             "q": "*:*",
             "fq": _filter_queries(year),
-            "fl": "id,subject,publication_date",  # only the 3 fields we use
+            "fl": "id,subject,publication_date",  # only the 3 fields I use
             "wt": "json",
             "rows": rows,
             "start": start,
@@ -68,14 +68,14 @@ def fetch_year(
         for doc in docs:
             yield doc
         start += rows
-        # Stop once we've paged past the total, or a page comes back empty.
+        # Stop once I've paged past the total, or a page comes back empty.
         if start >= body.get("numFound", 0) or not docs:
             break
         time.sleep(pause)
 
 
 def iter_psychology_articles(start_year: int, end_year: int, **kwargs) -> Iterator[dict]:
-    # We go year by year on purpose. Each year is only a few thousand results,
+    # I go year by year on purpose. Each year is only a few thousand results,
     # which keeps paging simple and well inside the engine's limits.
     session = requests.Session()
     for year in range(start_year, end_year + 1):
@@ -87,9 +87,9 @@ def psychology_subfields_from_paths(subject_paths: list[str]) -> list[str]:
 
     Solr gives each tag as a full path, like
     "/Biology and life sciences/Psychology/Cognitive psychology/...".
-    We split on the slashes, find "Psychology", and take the next piece. That
+    I split on the slashes, find "Psychology", and take the next piece. That
     piece is the subfield. One paper often carries the same subfield twice
-    (filed under both Biology and Social sciences), so we de-duplicate.
+    (filed under both Biology and Social sciences), so I de-duplicate.
     """
     subfields: list[str] = []
     for path in subject_paths:

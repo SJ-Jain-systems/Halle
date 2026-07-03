@@ -5,7 +5,7 @@
 #
 # Two runners:
 #   VLLMModelClient is the fast one. Built for running lots of prompts and
-#   splitting one huge model across several GPUs. We use this for the real
+#   splitting one huge model across several GPUs. I use this for the real
 #   58,000-paper run.
 #   TransformersModelClient is the simple one. Fine for the pilot or debugging on
 #   one GPU.
@@ -15,7 +15,7 @@
 # 70-billion-parameter model across. It's too big to fit on one.
 #
 # temperature = 0 means the model answers as flatly and repeatably as possible.
-# We want faithful extraction, not creative writing, so creativity is off.
+# I want faithful extraction, not creative writing, so creativity is off.
 """Run the model on the GPUs. Two backends: vLLM (fast) and transformers (simple)."""
 from __future__ import annotations
 
@@ -40,8 +40,8 @@ class VLLMModelClient:
 
     def _load(self):
         # Load the model once, the first time it's needed. It's about 140GB, so
-        # we don't want to load it twice. The import is inside the function on
-        # purpose. It's a heavy GPU-only library we only touch on a GPU node.
+        # I don't want to load it twice. The import is inside the function on
+        # purpose. It's a heavy GPU-only library I only touch on a GPU node.
         if self._llm is None:
             from vllm import LLM
 

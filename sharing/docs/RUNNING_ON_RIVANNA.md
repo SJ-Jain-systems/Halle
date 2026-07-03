@@ -37,7 +37,7 @@ corpus and the model.
 ## Step 1: download the corpus
 
 The article files come from allofplos. This is one big download, about 9 GB, and
-it covers every PLOS journal, not just PLOS ONE. We filter down later.
+it covers every PLOS journal, not just PLOS ONE. I filter down later.
 
 ```bash
 export PLOS_CORPUS=/scratch/$USER/allofplos_corpus
@@ -45,7 +45,7 @@ mkdir -p "$PLOS_CORPUS"
 python -c "from allofplos.corpus.plos_corpus import create_local_plos_corpus; create_local_plos_corpus(directory='$PLOS_CORPUS')"
 ```
 
-`tmux` was not available on the login node when we ran this, so we just ran it in
+`tmux` was not available on the login node when I ran this, so I just ran it in
 the foreground. It took about 13 minutes. If your session might drop, submit it
 as a job instead. Set `PLOS_CORPUS` again every time you log in, it does not
 persist.
@@ -94,7 +94,7 @@ python -m src.sample_articles --index data/corpus_index.csv --out data/sampled_a
 Writes 2 papers per subfield. With 23 subfields that is 46 papers. Same batch
 every time unless you change `--seed`.
 
-## Step 4: run the pilot on a GPU (I HAVE ONLY GOTTEN THIS FAR WITHOUT TROUBLESHOOTING)
+## Step 4: run the pilot on a GPU (I have only gotten this far without troubleshooting)
 
 Llama-3.3-70B is gated on Hugging Face. Accept Meta's license on the model page
 first, then make a read token. On the login node:
@@ -154,7 +154,7 @@ composition, and trend charts. These files are the answer to the study question.
 
 ## Troubleshooting
 
-Two of these cost us real time, so they are first.
+Two of these cost me real time, so they are first.
 
 - A batch job says it can't find a package you know is installed (like `lxml`),
   even though `pytest` works fine in your terminal. Cause: `conda activate` does

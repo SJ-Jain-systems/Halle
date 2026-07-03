@@ -7,7 +7,7 @@ through the code. The code itself is unchanged from the working versions.
 ## Read in this order
 
 1. `project_report.qmd` is the writeup. Start here. It covers the question, the
-   decisions, the data problems we hit and how we fixed them, and where things
+   decisions, the data problems I hit and how I fixed them, and where things
    stand. Render it with `quarto render project_report.qmd --to html`, or open
    it in RStudio.
 
@@ -24,6 +24,6 @@ through the code. The code itself is unchanged from the working versions.
 3. `docs/` is the reference material:
    - `DECISIONS.md` the three main decisions and why
    - `RUNNING_ON_RIVANNA.md` how to run the pipeline on the cluster
-   - `SCORING_RUBRIC.md` how we grade the model on the pilot
+   - `SCORING_RUBRIC.md` how I grade the model on the pilot
 
 These are copies. The live code and full history are in the main repo but tbh the main repo is a bit of a mess and I haven't really gotten past step 4 without debugging. The tests work, but I haven't put them into practice yet. 

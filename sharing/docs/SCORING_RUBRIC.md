@@ -1,6 +1,6 @@
 # Pilot scoring rubric
 
-How we grade the model on the pilot batch before running it on everything. For
+How I grade the model on the pilot batch before running it on everything. For
 each pilot paper, compare the model's output against a hand-coded correct answer
 for the same paper. Score 0 to 4 on each of the four axes below, then average.
 

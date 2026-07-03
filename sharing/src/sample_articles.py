@@ -1,5 +1,5 @@
 # NOTES
-# Picks the small test batch (the pilot) we use to check the model before
+# Picks the small test batch (the pilot) I use to check the model before
 # running it on all 58,000 papers. It reads the master list and draws 2 papers
 # from each subfield, at random but with a fixed seed so the same batch comes out
 # every time.
@@ -8,7 +8,7 @@
 # by the big subfields and might never test a rare one. This way the batch spans
 # the whole range.
 #
-# Before drawing, we throw out any paper we don't have the full-text file for
+# Before drawing, I throw out any paper I don't have the full-text file for
 # (about 6%, mostly very recent), so the batch never contains a paper the model
 # can't read.
 """Draw the stratified pilot sample from the master list.
@@ -66,7 +66,7 @@ def stratified_sample(
 
     For each subfield, gather every paper tagged with it and pick 2.
     random.Random(seed) is a fixed dice roll, so the picks are reproducible. If a
-    subfield has fewer than 2 papers we skip it rather than crash (in auto mode).
+    subfield has fewer than 2 papers I skip it rather than crash (in auto mode).
 
     Passing rows in directly, rather than reading a file here, keeps this easy to
     unit-test.
@@ -111,7 +111,7 @@ def filter_to_local_xml(rows: list[dict]) -> list[dict]:
     """Keep only papers whose full-text file actually exists on disk.
 
     About 6% of the index is papers, mostly very recent, that aren't in the local
-    snapshot. We can't read those, so they must not go into the pilot.
+    snapshot. I can't read those, so they must not go into the pilot.
     """
     kept = [r for r in rows if r.get("xml_path") and os.path.exists(r["xml_path"])]
     dropped = len(rows) - len(kept)
@@ -130,7 +130,7 @@ def main() -> None:
     args = parser.parse_args()
 
     # Load the master list, drop unreadable papers, draw the sample, write it out,
-    # and report what we covered.
+    # and report what I covered.
     rows = filter_to_local_xml(load_index(args.index))
     articles = stratified_sample(rows, per_subfield=args.per_subfield, seed=args.seed)
     write_csv(articles, args.out)

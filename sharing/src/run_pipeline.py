@@ -4,7 +4,7 @@
 # this was setup. This produces the data the study analyzes.
 #
 # Two things make it survivable on a shared supercomputer.
-#   Sharding: the work is split into equal chunks. We launch many copies at once,
+#   Sharding: the work is split into equal chunks. I launch many copies at once,
 #   each handling every Nth paper, so the whole thing runs in parallel across
 #   many GPUs instead of one slow line.
 #   Restartable: before working on a paper it checks whether that paper is
@@ -66,7 +66,7 @@ def load_index(index_csv: str) -> list[dict]:
 
 
 def already_processed_dois(out_path: str) -> set[str]:
-    # Read what's already in the output file so we can skip those papers. This is
+    # Read what's already in the output file so I can skip those papers. This is
     # what makes the run restartable after an interruption.
     if not os.path.exists(out_path):
         return set()
@@ -139,7 +139,7 @@ def run(
                         "lead_institution": article.get("lead_institution", ""),
                     }
                 )
-            f.flush()  # write to disk as we go, so progress survives a crash
+            f.flush()  # write to disk as I go, so progress survives a crash
             if (i + 1) % 50 == 0:
                 logger.info("Processed %d/%d articles in this shard", i + 1, len(rows))
 

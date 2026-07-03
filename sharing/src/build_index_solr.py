@@ -1,5 +1,5 @@
 # NOTES
-# This is the script we run to build the master list of papers
+# This is the script I run to build the master list of papers
 # (data/corpus_index.csv, about 58,000 rows). It pulls every psychology paper
 # from the search engine, works out each one's subfield and time stage, points
 # at where its full-text file lives, and writes one row per paper.
@@ -7,11 +7,11 @@
 # Run it on the login node. It needs internet but it's light. About 10 to 20
 # minutes.
 #
-# It replaced an earlier version that scanned the downloaded files directly. We
+# It replaced an earlier version that scanned the downloaded files directly. I
 # dropped that because the files are missing tags for 2015 and part of 2013.
 #
-# If the search engine returns a paper but we can't read a subfield out of its
-# tags, we skip it, so the list stays consistent with how we define psychology
+# If the search engine returns a paper but I can't read a subfield out of its
+# tags, I skip it, so the list stays consistent with how I define psychology
 # everywhere else.
 """Build the master list of psychology papers from the PLOS search index.
 
@@ -53,7 +53,7 @@ CSV_FIELDS = [
 
 
 def _parse_date(value: str) -> dt.date | None:
-    # Solr dates look like "2015-02-25T00:00:00Z". We only want the date part,
+    # Solr dates look like "2015-02-25T00:00:00Z". I only want the date part,
     # so keep the first 10 characters.
     try:
         return dt.date.fromisoformat(value[:10])
@@ -64,8 +64,8 @@ def _parse_date(value: str) -> dt.date | None:
 def build_index(out_path: str, corpus_dir: str, start_year: int = MIN_YEAR,
                 end_year: int = MAX_YEAR, log_every: int = 1000) -> int:
     # Four counters so the final log line says exactly what happened. seen is how
-    # many the engine returned. kept is how many we wrote. no_subfield is how
-    # many we dropped for having no readable subfield. missing_xml is how many we
+    # many the engine returned. kept is how many I wrote. no_subfield is how
+    # many I dropped for having no readable subfield. missing_xml is how many I
     # kept but don't have the full-text file for yet.
     kept = 0
     seen = 0
@@ -80,14 +80,14 @@ def build_index(out_path: str, corpus_dir: str, start_year: int = MIN_YEAR,
             subfields = psychology_subfields_from_paths(subjects)
             if not subfields:
                 # Solr matched on Psychology but the paths have no real
-                # Psychology node. Skip, to match how we define it elsewhere.
+                # Psychology node. Skip, to match how I define it elsewhere.
                 no_subfield += 1
                 continue
             doi = doc["id"]
             pub_date = _parse_date(doc.get("publication_date", ""))
             xml_path = doi_to_xml_path(doi, corpus_dir)
             if not os.path.exists(xml_path):
-                # Keep the paper, but note we can't read it yet.
+                # Keep the paper, but note I can't read it yet.
                 missing_xml += 1
             writer.writerow({
                 "doi": doi,
@@ -101,7 +101,7 @@ def build_index(out_path: str, corpus_dir: str, start_year: int = MIN_YEAR,
             })
             kept += 1
             if seen % log_every == 0:
-                # Print progress and flush so we can watch it live.
+                # Print progress and flush so I can watch it live.
                 logger.info("Fetched %d articles, kept %d", seen, kept)
                 f.flush()
     logger.info(

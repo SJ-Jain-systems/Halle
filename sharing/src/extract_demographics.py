@@ -1,15 +1,15 @@
 # NOTES
-# This is where we tell the model what to do and check what it gives back. It
-# holds the exact instruction we send with each paper, the list of fields every
+# This is where I tell the model what to do and check what it gives back. It
+# holds the exact instruction I send with each paper, the list of fields every
 # answer must have, and a strict checker that rejects anything malformed.
 #
 # The design that matters: one row per participant sample. If a paper ran three
-# studies with three groups of people, we want three rows, all sharing the
+# studies with three groups of people, I want three rows, all sharing the
 # paper's ID. That's baked into the instruction.
 #
 # The checker is deliberately harsh. If the model returns broken data or invents
-# an ID, we throw it out and flag it. Bad numbers here would corrupt the final
-# trends, so we fail loudly instead of letting junk through.
+# an ID, I throw it out and flag it. Bad numbers here would corrupt the final
+# trends, so I fail loudly instead of letting junk through.
 """The model instruction plus a strict checker for what it returns.
 
 One row per participant sample. A paper with three samples gives three rows, all
@@ -90,7 +90,7 @@ def parse_and_validate(raw_output: str, expected_doi: str) -> list[dict]:
     """Turn the model's raw text into checked rows, or reject it.
 
     Three checks. Is it valid JSON. Is it a list. Does every row have all the
-    required fields and the right paper ID. Any no, and we reject the whole
+    required fields and the right paper ID. Any no, and I reject the whole
     thing. This is the wall that keeps bad data out of the study.
     """
     try:

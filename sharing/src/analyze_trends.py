@@ -119,7 +119,7 @@ def run(table_csv: str, out_dir: str, make_plots: bool = True) -> None:
                       os.path.join(out_dir, f"{category}_reporting_rate_by_{group_col}.png"))
 
     # SES uses a 0/1/2 detail scale, not reported/not, so it gets its own
-    # summary. Here we report the share of samples at each level (0/1/2) per period.
+    # summary. Here I report the share of samples at each level (0/1/2) per period.
     for group_col in ("year", "stage"):
         ses_df = (
             df.groupby(group_col)["ses_reported"]
