@@ -1,6 +1,6 @@
 ---
 title: "Demographic Reporting in PLOS ONE Psychology Articles"
-subtitle: "A detailed progress report on building the dataset and pipeline"
+subtitle: "Progress report on building the dataset and pipeline"
 date: today
 format:
   html:
@@ -18,33 +18,31 @@ format:
 
 Empirical psychology rests on samples, and the credibility of a finding depends
 in part on who was sampled. When an article omits the demographic composition of
-its participants, readers cannot judge the scope of the claim, and downstream
-meta-analyses cannot assess who the literature actually speaks for. This is the
+its participants, a reader cannot judge the scope of the claim, and a later
+meta-analysis cannot assess who the literature actually speaks for. This is the
 question of sample representativeness, and it has both a descriptive and a
 temporal dimension.
 
-This project addresses both. First, at what rate do psychology articles report
-participant demographics (gender, race, education, and socioeconomic status)?
-Second, has that reporting rate shifted over the period 2010 to 2026, and does
-the trajectory differ across subfields or across the disruption of the COVID-19
-pandemic?
+I address both. First, at what rate do psychology articles report participant
+demographics (gender, race, education, and socioeconomic status)? Second, has
+that rate shifted over 2010 to 2026, and does the trajectory differ across
+subfields or across the disruption of the COVID-19 pandemic?
 
-We restrict attention to a single venue, PLOS ONE, for methodological
-tractability. It is high-volume, multidisciplinary, and fully open access, which
-means the entire corpus is retrievable and machine-readable rather than locked
-behind subscription paywalls. That combination is what makes a corpus-scale study
-of tens of thousands of articles feasible rather than a hand-coded sample of a
-few hundred.
+I restrict attention to a single venue, PLOS ONE, for tractability. It is
+high-volume, multidisciplinary, and fully open access, so the entire corpus is
+retrievable and machine-readable rather than locked behind paywalls. That is what
+makes a corpus-scale study of tens of thousands of articles feasible instead of a
+hand-coded sample of a few hundred.
 
-Because manual coding does not scale to that volume, the design delegates the
-reading to a large language model. For each qualifying article, the model reads
-the methods text and returns the reported demographics in a fixed structured
-form, which we then aggregate into reporting-rate trends.
+Because manual coding does not scale to that volume, I delegate the reading to a
+large language model. For each qualifying article, the model reads the methods
+text and returns the reported demographics in a fixed structured form, which I
+then aggregate into reporting-rate trends.
 
 ## Temporal design
 
-To characterize change over time we partition the study window into four periods
-chosen to reflect substantively distinct eras:
+To characterize change over time I partition the study window into four periods
+chosen to reflect distinct eras:
 
 | Stage | Years | Rationale |
 |-------|-------|-----------|
@@ -55,9 +53,8 @@ chosen to reflect substantively distinct eras:
 
 # The extraction schema
 
-For every distinct participant sample an article describes, we code whether, and
-in how much detail, each demographic was reported. The coding scheme is taken
-directly from the project brief:
+For every distinct participant sample an article describes, I code whether, and
+in how much detail, each demographic was reported:
 
 | Demographic | Coded fields |
 |-------------|--------------|
@@ -69,9 +66,9 @@ directly from the project brief:
 Two features of the schema are deliberate and consequential.
 
 The unit of analysis is the participant sample, not the article. A single article
-may report several independent samples, and each is coded as its own record,
-keyed to the shared article identifier (its DOI). Collapsing an article's samples
-into one record would discard genuine within-article variation and bias the
+may report several independent samples, and I code each as its own record, keyed
+to the shared article identifier (its DOI). Collapsing an article's samples into
+one record would discard genuine within-article variation and bias the
 reporting-rate estimates.
 
 Each record also carries article-level metadata: publication date, the
@@ -82,49 +79,47 @@ article. These support subgroup analysis and provenance tracking.
 
 An article enters the corpus only if it is an empirical research article (not an
 editorial, correction, or review), published in PLOS ONE, classified by PLOS
-under psychology (any subfield), and dated between 2010 and 2026. No lower bound
-is placed on sample size, per the brief.
+under psychology (any subfield), and dated between 2010 and 2026. I place no
+lower bound on sample size.
 
 # Pipeline architecture
 
-The system is a linear sequence of stages, each materializing an artifact the
-next stage consumes:
+The system is a linear sequence of stages, each producing an artifact the next
+stage consumes:
 
 ```
 1. Enumerate qualifying psychology articles  ->  master index (58,467 articles)  [DONE]
 2. Draw a stratified pilot sample            ->  46 articles                      [DONE]
 3. Run the model over the pilot              ->  extracted demographics            [NEXT]
-4. Manually adjudicate pilot accuracy        ->  proceed / revise decision
+4. Adjudicate pilot accuracy by hand         ->  proceed / revise decision
 5. Run the model over the full index         ->  full demographics table
 6. Aggregate the table                       ->  reporting-rate trends (the result)
 ```
 
-Stages 1 and 2 are complete and verified. The remainder of this document
-reconstructs how they were built and what design questions the later stages
-raise.
+Stages 1 and 2 are complete and verified. The rest of this document reconstructs
+how I built them and what the later stages still raise.
 
 ## Computing environment
 
 The pipeline runs on Rivanna, the University of Virginia's high-performance
 computing cluster. Two constraints motivate this. The chosen model is too large
 for commodity hardware and requires several high-memory GPUs held in parallel.
-And the full extraction over 58,467 articles is embarrassingly parallel, so it is
-partitioned across many workers to complete in tractable wall-clock time. The
-orchestration code is written to tolerate preemption and session loss, since
+And the full extraction over 58,467 articles is embarrassingly parallel, so I
+partition it across many workers to complete in tractable wall-clock time. The
+orchestration is written to tolerate preemption and session loss, since
 individual jobs run for hours.
 
 # Decision 1: data acquisition
 
-This was the most consequential design axis, and the reasoning is worth
-recording in full, because the final architecture was reached only after an
-initial approach failed against the empirical realities of the corpus. We began
-with one plan, encountered four distinct problems, and converged on a different
-and more defensible design.
+This was the most consequential design axis, and the reasoning is worth recording
+in full, because I reached the final architecture only after an initial approach
+failed against the realities of the corpus. I began with one plan, hit four
+distinct problems, and converged on a different and more defensible design.
 
 ## The initial approach: bulk local corpus
 
 PLOS distributes an open dataset, allofplos, that provides every PLOS article as
-a JATS XML file. We ingested it in full: roughly 391,000 articles, about 9 GB
+a JATS XML file. I ingested it in full: roughly 391,000 articles, about 9 GB
 compressed, held on the cluster. Each file embeds not only the article text but
 PLOS's hierarchical subject taxonomy, encoded as nested tags:
 
@@ -132,8 +127,8 @@ PLOS's hierarchical subject taxonomy, encoded as nested tags:
 Biology and life sciences  ->  Psychology  ->  Social psychology
 ```
 
-The attraction was self-containment. Parse the taxonomy from each file, retain
-the psychology articles, and never depend on a network service again. The parser
+The attraction was self-containment: parse the taxonomy from each file, keep the
+psychology articles, and never depend on a network service again. My parser
 descended to the subfield directly beneath a "Psychology" node:
 
 ```python
@@ -151,39 +146,52 @@ def get_psychology_subfields(article):
 
 ## Problem A: taxonomy schema drift
 
-The first implementation returned zero psychology articles. Diagnosis proceeded
-by serializing the raw taxonomy block of several recent articles and inspecting
-it. The tags were present, but the container element enclosing them had been
+My first implementation returned zero psychology articles. I diagnosed it by
+serializing the raw taxonomy block of several recent articles and reading it
+directly. The tags were present, but the container enclosing them had been
 renamed. PLOS annotates each taxonomy block with a type attribute; legacy
 articles use the value "Discipline", whereas current articles use "Discipline-v3".
-The parser matched the literal string "Discipline" and therefore silently
-excluded every modern article.
+My parser matched the literal string "Discipline" and therefore silently excluded
+every modern article.
 
 The remedy was to match any type beginning with "Discipline", covering both
 schema generations. The broader lesson, which recurred, is that PLOS's encoding
-is not stationary across fifteen years of publishing, so structural assumptions
-must be validated against the corpus rather than a single exemplar.
+is not stationary across fifteen years of publishing, so I validate structural
+assumptions against the corpus rather than a single exemplar.
 
 ## Problem B: subfield vocabulary mismatch
 
-The brief enumerated five target subfields: social, cognitive, developmental,
+The original plan named five target subfields: social, cognitive, developmental,
 clinical, and quantitative psychology. Cross-checking against the corpus surfaced
 two mismatches. PLOS's controlled vocabulary contains no term "Quantitative
 psychology", so that category would have matched nothing. Conversely, PLOS
-employs several subfields the brief did not list, including Experimental
+employs several subfields the plan did not list, including Experimental
 psychology, Psychometrics, Behavior, and Emotions.
 
-Rather than impose a preset list the taxonomy does not honor, we consulted the
-project owner, who elected to include all subfields. The design accordingly
-became taxonomy-driven: retain every article PLOS files under Psychology and
-record whichever subfield term PLOS assigned, irrespective of the original five.
-This is faithful to the field's own organization and lets downstream analysis
-aggregate or subset by subfield at will. In the finished corpus this yields 23
-distinct subfields rather than five.
+Rather than impose a preset list the taxonomy does not honor, I chose to include
+all subfields. The design accordingly became taxonomy-driven: I retain every
+article PLOS files under Psychology and record whichever subfield term PLOS
+assigned, irrespective of the original five. This is faithful to the field's own
+organization and lets me aggregate or subset by subfield later. In the finished
+corpus this yields 23 subfields rather than five:
+
+Addiction, Applied psychology, Behavior, Cognitive psychology, Collective human
+behavior, Developmental psychology, Emotions, Experimental psychology, Gender
+identity, Instinct, Neuropsychology, Pain psychology, Personality, Psychological
+adjustment, Psychological attitudes, Psychological defense mechanisms,
+Psychological stress, Psychology (unspecified), Psychometrics, Psychophysics,
+Relaxation (psychology), Sexual identity, and Social psychology.
+
+The breadth is worth noting. Some of these are standard subfields (social,
+cognitive, developmental psychology), some are broad topic areas PLOS files under
+Psychology (Behavior, Emotions), and a few are narrow or tangential to
+human-participant research (Instinct, and animal-behavior work that PLOS still
+tags under Psychology). Whether to analyze all 23 or restrict to a defined core
+is one of the open questions at the end of this report.
 
 ## Problem C: the 2015 discontinuity
 
-With the taxonomy parsing correctly, we executed the full scan over all 391,000
+With the taxonomy parsing correctly, I executed the full scan over all 391,000
 files and produced a first master index. A routine integrity check, tabulating
 the count of psychology articles per year, exposed a discontinuity that no
 plausible mechanism could explain as signal:
@@ -195,18 +203,18 @@ plausible mechanism could explain as signal:
 ```
 
 A near-empty year bracketed by full ones is diagnostic of a defect, not a trend,
-so we investigated rather than proceeding.
+so I investigated rather than proceeding.
 
-The first hypothesis attributed the gap to date parsing: perhaps 2015 articles
-were being misdated and displaced into adjacent years. We falsified this by
+My first hypothesis attributed the gap to date parsing: perhaps 2015 articles
+were being misdated and displaced into adjacent years. I falsified this by
 constructing a year histogram over all PLOS ONE articles regardless of subject,
 which showed 2015 fully populated with correctly dated articles. The articles
 existed and were dated; they were simply not being recognized as psychology.
 
-The second hypothesis localized the failure to subject detection in 2015
-specifically. We instrumented a per-year comparison between the count of articles
-our parser tagged as psychology and the count whose raw tags merely contained the
-substring "psycholog":
+My second hypothesis localized the failure to subject detection in 2015. I
+instrumented a per-year comparison between the count of articles my parser tagged
+as psychology and the count whose raw tags merely contained the substring
+"psycholog":
 
 ```
 year | total articles | tagged psychology | contains "psycholog"
@@ -233,23 +241,23 @@ a bare document-class heading and no subject taxonomy whatever. The tally was
 unambiguous: of 561 sampled 2015 articles, 557 carried no subject tags in their
 distributed files, as did roughly 37% of 2013 articles.
 
-The finding is therefore a property of the distributed data, not a coding defect.
-PLOS classified these articles in its production systems but, for that interval,
-never serialized the taxonomy into the downloadable files. A label that was never
+The finding is a property of the distributed data, not a coding defect. PLOS
+classified these articles in its production systems but, for that interval, never
+serialized the taxonomy into the downloadable files. A label that was never
 written cannot be read. Uncorrected, this would have voided most of 2015 and a
 substantial fraction of 2013, invalidating the Middle stage and any longitudinal
-trend traversing that interval.
+trend crossing that interval.
 
 ## The resolution: Solr for discovery
 
 The taxonomy is absent from the distributed files but not from PLOS itself. PLOS
 operates a Solr search index that holds the authoritative subject classification
-for every article, including those whose files omit it. We therefore inverted the
+for every article, including those whose files omit it. I therefore inverted the
 architecture: use the search index to determine which articles qualify
 (discovery), and retain the local files solely for the full text the model must
 read. This division of labor, search index for discovery and local corpus for
-full text, is in fact the design the original brief proposed before the
-bulk-local shortcut was attempted.
+full text, is in fact the design the original plan proposed before I attempted
+the bulk-local shortcut.
 
 ## Problem D: query construction
 
@@ -289,9 +297,9 @@ filters = [
 
 Under the search-index approach, 2015 recovered from 12 articles to 4,346. The
 index returns each subject as a full path, for instance /Biology and life
-sciences/Psychology/Cognitive psychology/Language, from which we read the
-subfield as the segment immediately following "Psychology", preserving the
-semantics of the earlier XML parser.
+sciences/Psychology/Cognitive psychology/Language, from which I read the subfield
+as the segment immediately following "Psychology", preserving the semantics of
+the earlier XML parser.
 
 ## Operational issues of note
 
@@ -302,23 +310,23 @@ Batch jobs repeatedly failed with a missing-dependency error despite the softwar
 being installed. The cause is that the conventional command for activating the
 software environment behaves differently inside a non-interactive batch job than
 in an interactive shell; it appeared to succeed but left the job bound to the
-wrong interpreter. The fix invokes the correct interpreter by absolute path,
-bypassing activation.
+wrong interpreter. I fixed it by invoking the correct interpreter by absolute
+path, bypassing activation.
 
 Separately, a long-running preprocessing step launched in a terminal background
 was terminated whenever the connection dropped, because the web terminal tears
-down its process group at session end. The fix submits that work as a scheduled
-job, which executes independently of any terminal. Both fixes are now encoded in
-the run scripts.
+down its process group at session end. I now submit that work as a scheduled job,
+which executes independently of any terminal. Both fixes are encoded in the run
+scripts.
 
 ## Data-quality handling
 
-The pipeline tolerates two specific defects observed in the corpus. One article
-file was truncated and unparseable; the scanner logs and skips it rather than
-aborting a multi-hour job over a single bad file out of 391,000. And roughly 6%
-of the articles returned by the search index, predominantly recent 2025 and 2026
+The pipeline tolerates two defects observed in the corpus. One article file was
+truncated and unparseable; the scanner logs and skips it rather than aborting a
+multi-hour job over a single bad file out of 391,000. And roughly 6% of the
+articles returned by the search index, predominantly recent 2025 and 2026
 publications, are absent from the local file snapshot and thus have no retrievable
-full text; these are flagged and excluded from sampling so the pipeline never
+full text; I flag these and exclude them from sampling so the pipeline never
 attempts to code an article it cannot read.
 
 # The finished master index
@@ -344,18 +352,17 @@ because the year is incomplete.
 
 # Decision 2: the pilot sample
 
-Before committing to a full run, the model is exercised on a small batch whose
-output is adjudicated by hand. Two properties of the sampling design matter.
+Before committing to a full run, I exercise the model on a small batch whose
+output I adjudicate by hand. Two properties of the sampling design matter.
 
 The sample is stratified rather than simple random. A simple random draw would be
 dominated by high-volume subfields such as social and cognitive psychology and
 might omit rarer ones entirely, whereas the point of the pilot is to probe the
-model across the full range of writing conventions. We therefore draw two
-articles from each subfield present in the index.
+model across the full range of writing conventions. So I draw two articles from
+each subfield present in the index.
 
-The draw is reproducible. It is seeded with a fixed value, so the identical
-sample can be regenerated by anyone, which is a precondition for a transparent,
-auditable process.
+The draw is reproducible. It is seeded with a fixed value, so I can regenerate the
+identical sample, which is a precondition for a transparent, auditable process.
 
 ```python
 def stratified_sample(articles, per_subfield=2, seed=42):
@@ -368,13 +375,12 @@ def stratified_sample(articles, per_subfield=2, seed=42):
     return picked
 ```
 
-The realized sample comprises 46 articles spanning 23 subfields, among them
-Social, Cognitive, and Developmental psychology, Personality, Emotions,
-Psychometrics, and Behavior.
+The realized sample comprises 46 articles spanning the 23 subfields listed
+earlier.
 
 # Decision 3: model selection
 
-The brief offered two candidate models, of which one was to be selected:
+The original plan offered two candidate models, of which I was to select one:
 
 | | Mistral-7B | Llama-3.3-70B (selected) |
 |---|---|---|
@@ -382,7 +388,7 @@ The brief offered two candidate models, of which one was to be selected:
 | Structured-extraction accuracy | Lower; more prone to omission and fabrication | Higher; more reliable |
 | Compute cost | Modest; runs on limited hardware | Substantial; requires multiple high-end GPUs |
 
-We selected Llama-3.3-70B. Accuracy is the binding criterion, because an omitted
+I selected Llama-3.3-70B. Accuracy is the binding criterion, because an omitted
 or fabricated demographic value propagates directly into the reporting-rate
 estimates that constitute the study's output. Executing on Rivanna removes the
 compute-cost consideration that would otherwise favor the smaller model. The
@@ -391,8 +397,8 @@ full run.
 
 # Extraction mechanics
 
-Each article's text is submitted to the model with an instruction that fixes both
-the extraction targets and the output format:
+I submit each article's text to the model with an instruction that fixes both the
+extraction targets and the output format:
 
 ```text
 You are coding a psychology research article for a systematic review of
@@ -408,18 +414,18 @@ Respond with ONLY a JSON array, one element per sample, with these exact keys...
 Two safeguards constrain the output. It is schema-validated, so a response must
 be well-formed structured data carrying exactly the required fields; malformed
 output is rejected and flagged rather than silently admitted to the dataset. And
-the methods and participants sections are reordered to the front of the submitted
+I reorder the methods and participants sections to the front of the submitted
 text, since demographics are reported there, which concentrates the relevant
 signal near the start of the prompt for long articles.
 
 # Scaling the full run
 
 Executing 58,467 articles through a 70-billion-parameter model is
-compute-intensive. The pipeline partitions the work into independent shards
-executed concurrently across many GPUs. Each shard writes its own output file,
-and the run is idempotent under restart: an interrupted shard skips the articles
-it has already completed and resumes, which is essential for multi-hour jobs
-subject to preemption.
+compute-intensive. I partition the work into independent shards executed
+concurrently across many GPUs. Each shard writes its own output file, and the run
+is idempotent under restart: an interrupted shard skips the articles it has
+already completed and resumes, which is essential for multi-hour jobs subject to
+preemption.
 
 # Aggregation and inference
 
@@ -473,21 +479,20 @@ And the diagnostic scripts that isolated the schema drift and the 2015 gap are
 retained in the repository, so the evidentiary basis for each design decision
 remains inspectable.
 
-# Open questions for discussion
+# Open questions
 
 Three decisions would benefit from input before the full run.
 
-1. Subfield scope. PLOS's taxonomy yields 23 psychology subfields, some broad
-   (Behavior, Emotions) and some tangential to human-participant research
-   (for example animal-behavior work filed under Psychology). Do we analyze all
-   23, or restrict to a defined core of human-participant subfields, and if so
-   which?
+1. Subfield scope. The taxonomy yields 23 psychology subfields, some broad
+   (Behavior, Emotions) and some tangential to human-participant research (for
+   example animal-behavior work filed under Psychology, or Instinct). Do I
+   analyze all 23, or restrict to a defined core of human-participant subfields,
+   and if so which?
 
 2. Coverage at the interval boundaries. Pre-2011 articles use the older tagging
    generation, and a fraction of 2025 to 2026 articles lack local full text. Are
    the earliest and latest years complete enough to support a fair longitudinal
-   comparison, or should the analysis window be bounded (for instance 2011 to
-   2024)?
+   comparison, or should I bound the analysis window (for example 2011 to 2024)?
 
 3. Validation threshold. What level of pilot accuracy, measured against the
    scoring rubric, justifies proceeding to the full run, and who performs the
