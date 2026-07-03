@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import logging
 import random
 
-from src.subfields import PSYCHOLOGY_SUBFIELDS
+logger = logging.getLogger(__name__)
 
 CSV_FIELDS = [
     "doi",
@@ -31,24 +32,54 @@ def load_index(index_csv: str) -> list[dict]:
         return list(csv.DictReader(f))
 
 
+def distinct_subfields(rows: list[dict]) -> list[str]:
+    """All psychology subfields present in the index, in first-seen order."""
+    seen: list[str] = []
+    for r in rows:
+        for sf in r.get("matched_subfields", "").split(";"):
+            sf = sf.strip()
+            if sf and sf not in seen:
+                seen.append(sf)
+    return seen
+
+
 def stratified_sample(
     rows: list[dict],
-    subfields: list[str] = PSYCHOLOGY_SUBFIELDS,
+    subfields: list[str] | None = None,
     per_subfield: int = 2,
     seed: int = 42,
 ) -> list[dict]:
     """Randomly select `per_subfield` articles from each subfield.
 
-    `rows` is a list of dicts as produced by build_corpus_index.py (each
-    with a `matched_subfields` field of ';'-joined subfield names) — passed
-    in directly rather than read from disk here, so this is trivially
+    `rows` is a list of dicts as produced by build_corpus_index.py (each with
+    a `matched_subfields` field of ';'-joined subfield names) — passed in
+    directly rather than read from disk here, so this is trivially
     unit-testable with fixture rows (tests/test_sample_articles.py).
+
+    When `subfields` is None (the default, used by the CLI), the subfields are
+    taken from whatever the index actually contains, and any subfield with
+    fewer than `per_subfield` articles is skipped with a warning — this keeps
+    the pilot representative across *all* psychology subfields PLOS uses
+    without a hardcoded list. When `subfields` is given explicitly, a subfield
+    short on candidates is an error instead.
     """
     rng = random.Random(seed)
+    auto = subfields is None
+    if auto:
+        subfields = distinct_subfields(rows)
     sampled: list[dict] = []
     for subfield in subfields:
-        candidates = [r for r in rows if subfield in r.get("matched_subfields", "").split(";")]
+        candidates = [
+            r for r in rows
+            if subfield in [s.strip() for s in r.get("matched_subfields", "").split(";")]
+        ]
         if len(candidates) < per_subfield:
+            if auto:
+                logger.warning(
+                    "Skipping subfield %r: only %d article(s), need %d",
+                    subfield, len(candidates), per_subfield,
+                )
+                continue
             raise ValueError(
                 f"Only {len(candidates)} candidates found for {subfield!r}, "
                 f"need at least {per_subfield}. Has src/build_corpus_index.py run yet?"
@@ -69,6 +100,7 @@ def write_csv(articles: list[dict], out_path: str) -> None:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--index", default="data/corpus_index.csv")
     parser.add_argument("--out", default="data/sampled_articles.csv")
@@ -79,7 +111,9 @@ def main() -> None:
     rows = load_index(args.index)
     articles = stratified_sample(rows, per_subfield=args.per_subfield, seed=args.seed)
     write_csv(articles, args.out)
+    subfields_covered = sorted({a["subfield"] for a in articles})
     print(f"Wrote {len(articles)} articles to {args.out}")
+    print(f"Covered {len(subfields_covered)} subfields: {', '.join(subfields_covered)}")
 
 
 if __name__ == "__main__":

@@ -12,7 +12,8 @@ Source brief: see the three open decisions and their reasoning in
    corpus is synced locally once; every filter (subfield, article type,
    date) and every full-text read after that is a local scan, no network.
 2. **Pilot sample** — 10 articles, stratified 2 per psychology subfield
-   (social, cognitive, developmental, clinical, quantitative), fixed random
+   (all subfields PLOS tags — social, cognitive, clinical, developmental,
+   experimental psychology, psychometrics, ...), fixed random
    seed for reproducibility.
 3. **Model** — `meta-llama/Llama-3.3-70B-Instruct`, run locally on Rivanna
    GPU nodes. Final choice, on accuracy grounds — see
@@ -42,7 +43,7 @@ allofplos corpus → build_corpus_index → sample_articles (pilot)
 src/
   jats_xml.py              low-level JATS XML parsing (subjects, dates, institutions, section text)
   allofplos_client.py      local corpus directory access — no network calls
-  subfields.py             the 5 target psychology subfields + time-stage buckets
+  subfields.py             time-stage buckets (subfields are taxonomy-driven, not hardcoded)
   build_corpus_index.py    scans the corpus, applies inclusion criteria, writes data/corpus_index.csv
   sample_articles.py       draws the 10-article stratified pilot sample
   extract_demographics.py  prompt + schema + validation for demographic rows

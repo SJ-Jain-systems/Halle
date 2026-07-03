@@ -9,7 +9,8 @@ Usage:
 Filters applied (brief item 3):
   - journal is PLOS ONE
   - article-type is "research-article" (empirical article)
-  - tagged with at least one of the 5 target psychology subfields
+  - tagged under the Psychology taxonomy node (any subfield — see
+    jats_xml.get_psychology_subfields; the specific subfield(s) are recorded)
   - publication year in [2010, 2026]
 No sample-size filter is applied — the brief explicitly says "all sample
 sizes (final sample)".
@@ -22,7 +23,7 @@ import logging
 
 from src.allofplos_client import DEFAULT_CORPUS_DIR, iter_corpus_xml
 from src.jats_xml import ArticleMetadata, parse_metadata
-from src.subfields import matched_subfields, stage_for_date
+from src.subfields import stage_for_date
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ def passes_inclusion_criteria(meta: ArticleMetadata) -> tuple[bool, list[str]]:
         return False, []
     if meta.publication_date is None or not (MIN_YEAR <= meta.publication_date.year <= MAX_YEAR):
         return False, []
-    subfields = matched_subfields(meta.subject)
+    subfields = meta.psychology_subfields
     if not subfields:
         return False, []
     return True, subfields

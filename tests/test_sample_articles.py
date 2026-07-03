@@ -1,6 +1,6 @@
 import pytest
 
-from src.sample_articles import stratified_sample
+from src.sample_articles import distinct_subfields, stratified_sample
 
 FAKE_SUBFIELDS = ["Social psychology", "Cognitive psychology"]
 
@@ -51,3 +51,28 @@ def test_stratified_sample_only_matches_exact_subfield_token():
     ]
     result = stratified_sample(rows, subfields=["Social psychology"], per_subfield=2)
     assert {r["doi"] for r in result} == {"b", "c"}
+
+
+def test_distinct_subfields_collects_all_present():
+    rows = [
+        {"doi": "a", "matched_subfields": "Social psychology;Cognitive psychology"},
+        {"doi": "b", "matched_subfields": "Clinical psychology"},
+        {"doi": "c", "matched_subfields": "Social psychology"},
+    ]
+    assert set(distinct_subfields(rows)) == {
+        "Social psychology", "Cognitive psychology", "Clinical psychology"
+    }
+
+
+def test_stratified_sample_auto_covers_all_subfields_and_skips_sparse():
+    # Auto mode (subfields=None): stratify over every subfield present, but
+    # silently skip ones without enough articles instead of erroring.
+    rows = (
+        [{"doi": f"soc{i}", "matched_subfields": "Social psychology"} for i in range(3)]
+        + [{"doi": f"cog{i}", "matched_subfields": "Cognitive psychology"} for i in range(3)]
+        + [{"doi": "rare0", "matched_subfields": "Psychometrics"}]  # only 1, too few
+    )
+    result = stratified_sample(rows, per_subfield=2)
+    covered = {r["subfield"] for r in result}
+    assert covered == {"Social psychology", "Cognitive psychology"}
+    assert len(result) == 4

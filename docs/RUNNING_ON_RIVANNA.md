@@ -123,23 +123,37 @@ sbatch slurm/build_index.slurm
 ```
 
 CPU-only, no GPU needed. Writes `data/corpus_index.csv` — every PLOS ONE
-research article tagged with one of the five target psychology subfields,
-2010–2026 (brief item 3). Check `wc -l data/corpus_index.csv` and spot-check
-a few rows' `subject`/`subject_level_1`/`matched_subfields` columns against
-the actual articles on plos.org — the taxonomy-parsing logic in
-`src/jats_xml.py` is unit-tested against a synthetic fixture, not against
-real PLOS XML, so this is the first point where it's worth a manual look.
+research article tagged under the Psychology taxonomy node (any subfield),
+2010–2026 (brief item 3).
 
-## Step 3: draw the 10-article pilot sample
+**Before the full ~1.5h build, validate the filter on a fast sample** (this
+is how the Discipline-v3 / subfield bugs were caught):
+
+```bash
+python scripts/validate_corpus_filter.py --corpus-dir "$PLOS_CORPUS"
+```
+
+It should report journal/article_type/year/psychology all passing on a
+meaningful fraction, and list the psychology subfields captured (Social,
+Cognitive, Clinical, Developmental, Experimental psychology, Psychometrics,
+...). If `passed psychology` is 0, stop — the filter is broken, don't run the
+full build.
+
+When the full build finishes, `wc -l data/corpus_index.csv` and eyeball a few
+rows' `subject` / `matched_subfields` columns against the real articles on
+plos.org.
+
+## Step 3: draw the pilot sample
 
 ```bash
 python -m src.sample_articles --index data/corpus_index.csv --out data/sampled_articles.csv
 ```
 
 Fast, CPU-only — fine to run directly on the login node. Writes
-`data/sampled_articles.csv`, 2 articles from each of the 5 subfields
-(`docs/DECISIONS.md` #2). Re-run with `--seed <n>` if you want a different
-draw; the default seed (42) is reproducible.
+`data/sampled_articles.csv`, 2 articles per psychology subfield present in the
+index (`docs/DECISIONS.md` #2 — this is 2×N articles for N subfields, not a
+fixed 10, since PLOS uses more than the brief's five). Re-run with `--seed <n>`
+for a different draw; the default seed (42) is reproducible.
 
 ## Step 4: pilot run — QA the chosen model before scaling up
 

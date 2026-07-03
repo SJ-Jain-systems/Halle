@@ -1,22 +1,6 @@
 import datetime as dt
 
-from src.subfields import matched_subfields, stage_for_date
-
-
-def test_matched_subfields_finds_nested_term():
-    terms = ["Biology and life sciences", "Psychology", "Social psychology"]
-    assert matched_subfields(terms) == ["Social psychology"]
-
-
-def test_matched_subfields_no_match():
-    terms = ["Medicine and health sciences", "Oncology"]
-    assert matched_subfields(terms) == []
-
-
-def test_matched_subfields_multiple():
-    terms = ["Cognitive psychology", "Clinical psychology"]
-    result = matched_subfields(terms)
-    assert set(result) == {"Cognitive psychology", "Clinical psychology"}
+from src.subfields import stage_for_date
 
 
 def test_stage_for_date_buckets():

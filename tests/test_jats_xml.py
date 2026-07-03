@@ -1,7 +1,13 @@
 import datetime as dt
 import os
 
-from src.jats_xml import get_extraction_text, get_subjects, parse_metadata, parse_tree
+from src.jats_xml import (
+    get_extraction_text,
+    get_psychology_subfields,
+    get_subjects,
+    parse_metadata,
+    parse_tree,
+)
 
 FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "sample_article.xml")
 
@@ -77,3 +83,29 @@ def test_get_subjects_reads_discipline_v3(tmp_path):
     assert "Social psychology" in subject
     assert "Psychology" in subject
     assert "Research Article" not in subject
+
+
+def test_get_psychology_subfields_v3(tmp_path):
+    path = tmp_path / "v3.xml"
+    path.write_text(DISCIPLINE_V3_XML, encoding="utf-8")
+    # "Social psychology" is nested under Psychology in two discipline branches;
+    # it should come back once, deduplicated.
+    assert get_psychology_subfields(parse_tree(str(path))) == ["Social psychology"]
+
+
+def test_get_psychology_subfields_fixture():
+    # The old-style `Discipline` fixture also nests Social psychology under Psychology.
+    assert get_psychology_subfields(parse_tree(FIXTURE)) == ["Social psychology"]
+
+
+def test_get_psychology_subfields_empty_when_no_psychology(tmp_path):
+    xml = """<?xml version="1.0"?>
+<article article-type="research-article"><front><article-meta>
+<article-categories>
+  <subj-group subj-group-type="Discipline-v3"><subject>Medicine and health sciences</subject>
+    <subj-group><subject>Oncology</subject></subj-group></subj-group>
+</article-categories>
+</article-meta></front></article>"""
+    path = tmp_path / "no_psych.xml"
+    path.write_text(xml, encoding="utf-8")
+    assert get_psychology_subfields(parse_tree(str(path))) == []

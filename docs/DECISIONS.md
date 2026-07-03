@@ -43,24 +43,34 @@ check `data/corpus_index.csv` against a handful of known articles after the
 first index build to confirm subfield tagging looks right before trusting it
 at scale.
 
-## 2. Ten-article pilot sample
+## 2. Pilot sample
 
-**Decision: stratify 2 articles per subfield across the 5 subfields named in
-the brief, drawn independently at random with a fixed seed for
-reproducibility.**
+**Decision: stratify 2 articles per psychology subfield, over *all* subfields
+PLOS actually tags (not a hardcoded five), drawn at random with a fixed seed
+for reproducibility.**
 
-Subfields (brief item 3.c): social, cognitive, developmental, clinical,
-quantitative psychology.
+The brief (item 3.c) named five subfields — social, cognitive, developmental,
+clinical, quantitative psychology — but validating against the real corpus
+showed PLOS's taxonomy doesn't use "Quantitative psychology" as a term at all,
+and *does* use several the brief didn't list (Experimental psychology,
+Psychometrics, ...). Rather than force the brief's list onto a taxonomy that
+doesn't match it, the pipeline is taxonomy-driven: it captures every article
+tagged under the Psychology node and records whatever subfield(s) PLOS
+assigned (see decision #1 / `jats_xml.get_psychology_subfields`). The pilot
+then stratifies over whatever subfields the index actually contains.
 
-Why stratify instead of pooling and sampling 10 uniformly at random: a
-uniform draw over all matching articles risks a subfield with more PLOS ONE
-output (e.g. social/cognitive) crowding out the others, and the point of the
-pilot is to sanity-check the chosen model's extraction quality *across*
-subfields before spending GPU time on the full run. 2×5 guarantees coverage.
+Why stratify instead of pooling and sampling uniformly at random: a uniform
+draw risks a high-volume subfield (e.g. social/cognitive) crowding out the
+others, and the point of the pilot is to sanity-check the chosen model's
+extraction quality *across* subfields before spending GPU time on the full
+run. 2-per-subfield guarantees coverage. (This makes the pilot 2×N articles
+for N subfields present, rather than a fixed 10 — the brief's "10" assumed
+exactly 5 subfields.)
 
-Implementation: `src/sample_articles.py`, function `stratified_sample()`,
-reading from `data/corpus_index.csv` (no network). Seed defaults to `42`;
-override with `--seed` for a different draw.
+Implementation: `src/sample_articles.py`, function `stratified_sample()`
+(auto-derives subfields from the index, skips any with < 2 articles), reading
+from `data/corpus_index.csv` (no network). Seed defaults to `42`; override
+with `--seed`.
 
 ## 3. Model choice
 
@@ -88,5 +98,5 @@ keep Mistral in the loop as a second candidate.
 `src/run_pilot.py` (`slurm/run_pilot.slurm`) still runs the 10-article pilot
 through Llama-3.3-70B-Instruct before the full corpus run — not to compare
 it against anything, but as a QA spot-check (`docs/SCORING_RUBRIC.md`) that
-extraction quality looks right across all 5 subfields before spending real
+extraction quality looks right across the psychology subfields before spending real
 GPU time on ~thousands of articles.

@@ -57,6 +57,7 @@ class ArticleMetadata:
     publication_date: _dt.date | None
     subject_level_1: list[str] = field(default_factory=list)
     subject: list[str] = field(default_factory=list)
+    psychology_subfields: list[str] = field(default_factory=list)
     lead_institution: str | None = None
     xml_path: str = ""
 
@@ -138,6 +139,48 @@ def get_subjects(tree: etree._ElementTree) -> tuple[list[str], list[str]]:
     return subject, subject_level_1
 
 
+def get_psychology_subfields(tree: etree._ElementTree) -> list[str]:
+    """Every taxonomy term nested directly under a "Psychology" node, across
+    all Discipline groups — i.e. the article's psychology subfield(s).
+
+    For `Biology and life sciences > Psychology > Social psychology` this
+    returns `["Social psychology"]`. An article tagged under Psychology in
+    more than one discipline branch (PLOS often files psychology under both
+    "Biology and life sciences" and "Social sciences") yields the subfield
+    once, deduplicated. If "Psychology" is tagged as a leaf with no subfield
+    child, returns `["Psychology"]` so the article still counts as psychology
+    with an unspecified subfield. Empty if the article isn't under Psychology
+    at all.
+
+    This is taxonomy-driven rather than matched against a fixed subfield list,
+    so it captures *all* psychology subfields PLOS uses (Social, Cognitive,
+    Clinical, Developmental, Experimental psychology, Psychometrics, ...),
+    not just a hardcoded few.
+    """
+    subfields: list[str] = []
+    cats = tree.find(".//article-categories")
+    if cats is None:
+        return subfields
+    for subject_node in cats.iter("subject"):
+        if (subject_node.text or "").strip() != "Psychology":
+            continue
+        parent_group = subject_node.getparent()
+        if parent_group is None:
+            continue
+        child_groups = [c for c in parent_group if c.tag == "subj-group"]
+        if not child_groups:
+            if "Psychology" not in subfields:
+                subfields.append("Psychology")
+            continue
+        for child_group in child_groups:
+            child_subject = child_group.find("subject")
+            if child_subject is not None and child_subject.text:
+                term = child_subject.text.strip()
+                if term not in subfields:
+                    subfields.append(term)
+    return subfields
+
+
 def get_lead_institution(tree: etree._ElementTree) -> str | None:
     """Corresponding author's institution; falls back to the first listed
     author if no contrib is marked corresp="yes" (brief item 4.b: "Corresponding
@@ -174,6 +217,7 @@ def parse_metadata(xml_path: str) -> ArticleMetadata:
         publication_date=get_publication_date(tree),
         subject_level_1=subject_level_1,
         subject=subject,
+        psychology_subfields=get_psychology_subfields(tree),
         lead_institution=get_lead_institution(tree),
         xml_path=xml_path,
     )
