@@ -4,6 +4,7 @@ PyYAML>=6.0
 pandas>=2.0
 matplotlib>=3.8
 pytest>=7.4
+requests>=2.31  # PLOS Solr discovery (src/solr_client.py)
 
 # Needed only to sync the local corpus (docs/RUNNING_ON_RIVANNA.md step 1) —
 # the pipeline code itself parses the downloaded XML directly with lxml and

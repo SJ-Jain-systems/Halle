@@ -116,32 +116,38 @@ is done, nothing else in the pipeline touches the network.
    ```
    should print a large number (hundreds of thousands) once the sync is done.
 
-## Step 2: build the filtered corpus index
+## Step 2: build the filtered corpus index (from PLOS Solr)
 
 ```bash
-sbatch slurm/build_index.slurm
+python -m src.build_index_solr --out data/corpus_index.csv --corpus-dir "$PLOS_CORPUS"
 ```
 
-CPU-only, no GPU needed. Writes `data/corpus_index.csv` — every PLOS ONE
-research article tagged under the Psychology taxonomy node (any subfield),
-2010–2026 (brief item 3).
+**Run this on the login node** (it needs internet — compute nodes don't have
+it). It's network-bound, not compute-bound: it enumerates every psychology
+PLOS ONE research article 2010–2026 directly from PLOS's Solr index and maps
+each DOI to its local XML file. Takes roughly 10–20 minutes.
 
-**Before the full ~1.5h build, validate the filter on a fast sample** (this
-is how the Discipline-v3 / subfield bugs were caught):
+Why Solr instead of scanning the local XML: the allofplos XML is missing the
+subject taxonomy for a large share of some years (~99% of 2015, ~37% of 2013
+— see `scripts/diagnose_2015.py`), so an XML-only scan silently drops those
+articles. PLOS's Solr index has the authoritative taxonomy for every article.
+This is the "Solr for discovery, allofplos for full text" split from the
+brief. (The old XML-scan path, `slurm/build_index.slurm` /
+`src/build_corpus_index.py`, is kept in the repo for reference but is
+superseded by this step.)
+
+Sanity-check when it finishes — the per-year counts should be smooth with no
+near-empty years (the bug this step fixes):
 
 ```bash
-python scripts/validate_corpus_filter.py --corpus-dir "$PLOS_CORPUS"
+python -c "
+import csv
+from collections import Counter
+rows=list(csv.DictReader(open('data/corpus_index.csv')))
+print('total:', len(rows))
+print('by year:', dict(sorted(Counter(r['year'] for r in rows).items())))
+"
 ```
-
-It should report journal/article_type/year/psychology all passing on a
-meaningful fraction, and list the psychology subfields captured (Social,
-Cognitive, Clinical, Developmental, Experimental psychology, Psychometrics,
-...). If `passed psychology` is 0, stop — the filter is broken, don't run the
-full build.
-
-When the full build finishes, `wc -l data/corpus_index.csv` and eyeball a few
-rows' `subject` / `matched_subfields` columns against the real articles on
-plos.org.
 
 ## Step 3: draw the pilot sample
 

@@ -7,41 +7,46 @@ This document records the three open decisions from the brief and the
 reasoning behind each. Code implementing these decisions lives in `src/`;
 how to actually run it on Rivanna is in `docs/RUNNING_ON_RIVANNA.md`.
 
-## 1. Data access: `allofplos` only (revised — Solr dropped)
+## 1. Data access: Solr for discovery, `allofplos` for full text
 
-**Decision: `allofplos` (github.com/PLOS/allofplos) is the sole data
-source. No Solr calls anywhere in this pipeline.**
+**Decision: enumerate the psychology article set from PLOS's Solr index
+(`src/solr_client.py`, `src/build_index_solr.py`), and use the local
+`allofplos` XML corpus only for full-text extraction.**
 
-The original plan (see git history) split this into "Solr for discovery,
-allofplos for full text," using Solr's `subject_level_1` field to filter by
-psychology subfield. That's no longer how this pipeline works — the whole
-corpus (or the PLOS ONE slice of it) is synced locally once, and every
-filtering/discovery step that would have been a Solr query is now a local
-scan of the XML instead:
+This landed on the brief's *original* architecture, but only after trying and
+abandoning an allofplos-only approach — the reasoning is worth recording
+because it's a real data-quality finding:
 
-- **Subject taxonomy** (brief item 4.c.i: `subject` and `subject_level_1`):
-  PLOS tags every article's JATS XML with `<subj-group
-  subj-group-type="Discipline">` blocks — nested `<subject>` elements
-  encoding the same taxonomy Solr exposed as `subject`/`subject_level_1`.
-  `src/jats_xml.py::get_subjects()` parses this directly: `subject_level_1`
-  is the top `<subject>` of each Discipline branch, `subject` is every
-  `<subject>` term found at any depth. This is a direct re-derivation of the
-  Solr fields, not a proxy for them — same semantics, no network call.
-- **Subfield / article-type / journal / date filtering** (brief item 3):
-  `src/build_corpus_index.py` scans every XML file in the local corpus once
-  and writes the matching population to `data/corpus_index.csv`.
-- **Full text for demographic extraction**: already local, since the whole
-  point of allofplos is a local mirror — `src/jats_xml.py::get_extraction_text()`
-  pulls Methods/Participants section text straight off disk.
+1. **First tried: allofplos-only, parse taxonomy from local XML.** The idea
+   was to sync the whole corpus once and read PLOS's subject taxonomy straight
+   from each article's JATS `<subj-group>` blocks (`src/jats_xml.py`,
+   `src/build_corpus_index.py`), making the pipeline fully offline after the
+   one-time download.
+2. **Why it failed:** validated against the real corpus (391k articles), the
+   XML is missing the subject taxonomy for a large, *year-dependent* share of
+   articles — ≈99% of 2015 and ≈37% of 2013 have only a "Research Article"
+   heading and no discipline tags at all (see `scripts/diagnose_2015.py`). An
+   XML-only scan therefore silently dropped almost all of 2015, which would
+   gut the "middle" (2015–2019) stage of the analysis. This isn't fixable by
+   better parsing — the data simply isn't in those files.
+3. **Fix: Solr for discovery.** PLOS's Solr index carries the authoritative
+   taxonomy for *every* article. `src/build_index_solr.py` queries it for
+   every PLOS ONE research article 2010–2026 tagged under Psychology
+   (`subject:"Psychology"`, with the mandatory `doc_type:full` and strict `fq`
+   filters — see `scripts/test_solr.py`), parses the subfield from the subject
+   *paths*, and maps each DOI to its local XML file for full-text. Gap-free
+   and uniform across all years.
 
-Net effect: this pipeline makes zero calls to `api.plos.org` after the
-one-time corpus sync. Tradeoff versus the Solr-hybrid approach: the initial
-corpus download is a large one-time cost (see `docs/RUNNING_ON_RIVANNA.md`
-step 1 for size/storage guidance), and taxonomy parsing now depends on JATS
-XML structure being consistent across ~15 years of PLOS ONE articles — spot
-check `data/corpus_index.csv` against a handful of known articles after the
-first index build to confirm subfield tagging looks right before trusting it
-at scale.
+Subject metadata (brief item 4.c.i: `subject` / `subject_level_1`) comes from
+Solr's subject paths; full text (Methods/Participants) still comes from the
+local XML via `src/jats_xml.py::get_extraction_text()`, which is present even
+for the taxonomy-less articles.
+
+Net effect: one network step (Solr enumeration, on the login node — ~10-20
+min, not the ~1.5h XML scan) plus the one-time corpus download; everything
+downstream reads local XML. The XML-scan code
+(`src/build_corpus_index.py`, `slurm/build_index.slurm`) is kept for
+reference but superseded.
 
 ## 2. Pilot sample
 
