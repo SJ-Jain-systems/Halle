@@ -1,67 +1,21 @@
-# ============================================================================
-# PLAIN-ENGLISH NOTES (for colleagues reading this file)
+# NOTES
+# PLOS articles are stored as XML files. This is the toolbox for pulling things
+# out of one: the ID, title, journal, date, subject tags, the corresponding
+# author's institution, and the body text.
 #
-# What this file is for: PLOS articles are stored as XML files (a structured
-# text format). This file is the toolbox for pulling things OUT of one of those
-# files: the paper's ID, title, journal, publication date, subject tags, the
-# corresponding author's institution, and the body text.
+# The one piece the model needs is the body text, and mostly the
+# Methods/Participants section, because that's where demographics live.
+# get_extraction_text pulls the whole body but moves those sections to the front
+# so the model sees them first.
 #
-# The one piece the model actually needs is the body text, and specifically the
-# Methods/Participants section, because that is where demographics are reported.
-# get_extraction_text() pulls the whole body but shoves those sections to the
-# front so the model sees them first.
+# The subject-tag functions were how we originally found psychology papers from
+# the files. We moved that job to the search engine because the files are
+# missing tags for some years. These still read tags where they exist, and they
+# document how the tags are laid out.
 #
-# The subject-tag functions (get_subjects, get_psychology_subfields) were the
-# original way we identified psychology papers from the files. We later moved
-# that job to the search engine (solr_client.py) because the files are missing
-# tags for some years, but these functions are still used to read tags where
-# they ARE present, and they document how the tags are structured.
-#
-# If you don't read XML: "tree.find(...)" means "go dig out this element", and
-# the slash-path strings are just addresses pointing at where in the file to
-# look.
-# ============================================================================
-
-"""Parse JATS XML (the format used by every article in the allofplos corpus)
-directly with lxml, rather than relying on allofplos's higher-level Article
-wrapper. The wrapper doesn't expose subject taxonomy or a `subject_level_1`
-equivalent, and that's exactly what brief item 4.c.i needs (previously "via
-Solr" — now derived locally from the XML itself, since we're no longer
-calling Solr at all).
-
-JATS structure assumed here (standard PLOS layout — spot-check a handful of
-articles against this after the corpus is downloaded, since taxonomy nesting
-has changed slightly across PLOS's history):
-
-  <article article-type="research-article">
-    <front>
-      <journal-meta>...<journal-title>PLOS ONE</journal-title>...</journal-meta>
-      <article-meta>
-        <pub-date pub-type="epub"><year/><month/><day/></pub-date>
-        <contrib-group>
-          <contrib contrib-type="author" corresp="yes">
-            <xref ref-type="aff" rid="aff1"/>
-          </contrib>
-        </contrib-group>
-        <aff id="aff1"><institution>...</institution></aff>
-        <article-categories>
-          <subj-group subj-group-type="Discipline">
-            <subject>Biology and life sciences</subject>
-            <subj-group>
-              <subject>Psychology</subject>
-              <subj-group>
-                <subject>Social psychology</subject>
-              </subj-group>
-            </subj-group>
-          </subj-group>
-        </article-categories>
-      </article-meta>
-    </front>
-    <body>
-      <sec><title>Methods</title>...<sec><title>Participants</title>...</sec></sec>
-    </body>
-  </article>
-"""
+# If you don't read XML: tree.find(...) means "go dig out this element", and the
+# slash paths are addresses telling it where to look.
+"""Read metadata and text out of PLOS article XML files."""
 from __future__ import annotations
 
 import datetime as _dt
@@ -69,13 +23,13 @@ from dataclasses import dataclass, field
 
 from lxml import etree
 
-# Section headings we treat as "probably where the demographics are."
+# Section headings we treat as probably where the demographics are.
 SECTION_TITLE_KEYWORDS = ("method", "participant", "sample", "procedure")
 
 
 @dataclass
 class ArticleMetadata:
-    # A tidy container holding everything we extract about one article.
+    # A tidy box holding everything we pull about one article.
     doi: str
     title: str
     journal: str
@@ -115,9 +69,9 @@ def get_article_type(tree: etree._ElementTree) -> str:
 
 
 def get_publication_date(tree: etree._ElementTree) -> _dt.date | None:
-    # PLOS records several dates (online date, print date, etc.). We try them in
-    # a sensible order and take the first one that gives us a usable year. If a
-    # month or day is missing we default to 1, since we mostly care about year.
+    # PLOS records several dates: online, print, and so on. We try them in a
+    # sensible order and take the first that gives a usable year. If month or day
+    # is missing we default to 1, since we mostly care about the year.
     for pub_type in ("epub", "collection", "ppub", None):
         xpath = ".//pub-date[@pub-type='%s']" % pub_type if pub_type else ".//pub-date"
         node = tree.find(xpath)
@@ -136,23 +90,15 @@ def get_publication_date(tree: etree._ElementTree) -> _dt.date | None:
 
 
 def get_subjects(tree: etree._ElementTree) -> tuple[list[str], list[str]]:
-    """Returns (subject, subject_level_1), replicating the Solr fields of the
-    same name: `subject` is every taxonomy term tagged on the article, in
-    document order and deduplicated; `subject_level_1` is just the top-level
-    term of each Discipline branch (an article can carry more than one
-    Discipline, e.g. Biology and Social sciences both).
+    """Read the subject tags.
 
-    Matches any `subj-group-type` that starts with "Discipline" — verified
-    against the real allofplos corpus, PLOS's current thesaurus tags these
-    groups `Discipline-v3`, while older articles use plain `Discipline`. The
-    other group types present (`heading` for "Research Article", nested inner
-    groups with no type) are correctly skipped.
+    subject_level_1 is the top of each branch, like "Biology and life sciences".
+    subject is every tag at any depth.
+
+    The startswith("Discipline") check is the fix for the tag-format change. Old
+    files say "Discipline", new files say "Discipline-v3". Accept both. Miss this
+    and modern papers come back empty.
     """
-    # Reads the subject tags. "subject_level_1" is the top of each branch
-    # (e.g. "Biology and life sciences"); "subject" is every tag at any depth.
-    # NOTE the startswith("Discipline") check: this is the fix for the tag-format
-    # change - old files say "Discipline", new files say "Discipline-v3", and we
-    # accept both. Miss this and modern papers return nothing.
     subject: list[str] = []
     subject_level_1: list[str] = []
     cats = tree.find(".//article-categories")
@@ -176,26 +122,14 @@ def get_subjects(tree: etree._ElementTree) -> tuple[list[str], list[str]]:
 
 
 def get_psychology_subfields(tree: etree._ElementTree) -> list[str]:
-    """Every taxonomy term nested directly under a "Psychology" node, across
-    all Discipline groups — i.e. the article's psychology subfield(s).
+    """Return the subfield(s) sitting directly under a "Psychology" tag.
 
-    For `Biology and life sciences > Psychology > Social psychology` this
-    returns `["Social psychology"]`. An article tagged under Psychology in
-    more than one discipline branch (PLOS often files psychology under both
-    "Biology and life sciences" and "Social sciences") yields the subfield
-    once, deduplicated. If "Psychology" is tagged as a leaf with no subfield
-    child, returns `["Psychology"]` so the article still counts as psychology
-    with an unspecified subfield. Empty if the article isn't under Psychology
-    at all.
-
-    This is taxonomy-driven rather than matched against a fixed subfield list,
-    so it captures *all* psychology subfields PLOS uses (Social, Cognitive,
-    Clinical, Developmental, Experimental psychology, Psychometrics, ...),
-    not just a hardcoded few.
+    Find the "Psychology" tag, then grab whatever is one level under it. That is
+    the subfield. This is why we get all 23 subfields instead of a hardcoded
+    five: we take whatever PLOS actually filed the paper under. If Psychology has
+    no child, we return "Psychology" on its own. Empty if the paper isn't under
+    Psychology at all.
     """
-    # Find the "Psychology" tag, then grab whatever sits one level under it -
-    # that's the subfield. This is why we get all 23 subfields instead of a
-    # hardcoded five: we take whatever PLOS actually filed the paper under.
     subfields: list[str] = []
     cats = tree.find(".//article-categories")
     if cats is None:
@@ -221,11 +155,12 @@ def get_psychology_subfields(tree: etree._ElementTree) -> list[str]:
 
 
 def get_lead_institution(tree: etree._ElementTree) -> str | None:
-    """Corresponding author's institution; falls back to the first listed
-    author if no contrib is marked corresp="yes" (brief item 4.b: "Corresponding
-    (First) Author institution")."""
-    # Find the corresponding author, follow the cross-reference to their
-    # affiliation block, and read the institution name out of it.
+    """Get the corresponding author's institution.
+
+    Find the corresponding author, follow the cross-reference to their
+    affiliation, and read the institution name. Falls back to the first author if
+    none is marked as corresponding.
+    """
     contribs = tree.findall(".//article-meta/contrib-group/contrib[@contrib-type='author']")
     if not contribs:
         return None
@@ -242,13 +177,13 @@ def get_lead_institution(tree: etree._ElementTree) -> str | None:
     institution = aff.find("institution")
     if institution is not None and institution.text:
         return institution.text.strip()
-    # No structured <institution>; fall back to the affiliation's full text.
+    # No structured institution tag, so fall back to the affiliation's full text.
     text = "".join(aff.itertext()).strip()
     return text or None
 
 
 def parse_metadata(xml_path: str) -> ArticleMetadata:
-    # Convenience: open a file once and pull everything into one tidy object.
+    # Open a file once and pull everything into one tidy object.
     tree = parse_tree(xml_path)
     subject, subject_level_1 = get_subjects(tree)
     return ArticleMetadata(
@@ -266,15 +201,12 @@ def parse_metadata(xml_path: str) -> ArticleMetadata:
 
 
 def get_extraction_text(xml_path: str) -> str:
-    """Full body text, but with Methods/Participants/Sample/Procedure
-    sections moved to the front — demographics almost always live there, and
-    putting them first keeps the signal near the start of the prompt for
-    articles long enough to worry about context budget.
+    """Get the body text to hand the model, Methods/Participants first.
+
+    We keep the whole body but reorder it so Methods and Participants come first.
+    That's where the demographics are, and models pay most attention to the start
+    of a long prompt.
     """
-    # This is the text we hand to the model. We keep the whole body, but reorder
-    # it so the Methods/Participants sections come first, because that's where
-    # the demographics are and models pay most attention to the start of a long
-    # prompt.
     tree = parse_tree(xml_path)
     body = tree.find(".//body")
     if body is None:
@@ -282,9 +214,9 @@ def get_extraction_text(xml_path: str) -> str:
 
     priority_text: list[str] = []
     other_text: list[str] = []
-    # Only top-level sections: nested <sec> (e.g. "Participants" inside
-    # "Methods") are already covered by itertext() on their parent, and
-    # walking `.//sec` would duplicate that text.
+    # Top-level sections only. A nested section (like Participants inside
+    # Methods) is already covered by its parent, so walking every section would
+    # duplicate text.
     for sec in body.findall("sec"):
         all_titles = " ".join(t.text or "" for t in sec.findall(".//title"))
         section_text = "".join(sec.itertext()).strip()

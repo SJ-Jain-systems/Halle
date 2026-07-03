@@ -1,22 +1,17 @@
-# ============================================================================
-# PLAIN-ENGLISH NOTES (for colleagues reading this file)
+# NOTES
+# Picks the small test batch (the pilot) we use to check the model before
+# running it on all 58,000 papers. It reads the master list and draws 2 papers
+# from each subfield, at random but with a fixed seed so the same batch comes out
+# every time.
 #
-# What this file is for: picks the small test batch (the "pilot") we use to
-# check the model before running it on all 58,000 papers. It reads the master
-# list and draws 2 papers from EACH subfield, at random but with a fixed seed
-# so the exact same batch comes out every time anyone runs it.
+# Why 2 per subfield and not 46 at random: a plain random draw would be swamped
+# by the big subfields and might never test a rare one. This way the batch spans
+# the whole range.
 #
-# Why 2-per-subfield instead of just picking 46 at random: a plain random draw
-# would be swamped by the big subfields (social, cognitive) and might never
-# test a rare one. Stratifying guarantees the batch spans the full range.
-#
-# One safety step: before drawing, we throw out any paper we don't have the
-# full-text file for (about 6%, mostly very recent), so we never put a paper in
-# the test batch that the model can't actually read.
-# ============================================================================
-
-"""Draw the 10-article pilot sample (docs/DECISIONS.md #2) from the local
-corpus index built by src/build_corpus_index.py. No network calls.
+# Before drawing, we throw out any paper we don't have the full-text file for
+# (about 6%, mostly very recent), so the batch never contains a paper the model
+# can't read.
+"""Draw the stratified pilot sample from the master list.
 
 Usage:
     python -m src.sample_articles --index data/corpus_index.csv --out data/sampled_articles.csv
@@ -51,8 +46,7 @@ def load_index(index_csv: str) -> list[dict]:
 
 
 def distinct_subfields(rows: list[dict]) -> list[str]:
-    """All psychology subfields present in the index, in first-seen order."""
-    # Walk the whole list once and collect every subfield name that appears.
+    """List every subfield that shows up in the master list."""
     seen: list[str] = []
     for r in rows:
         for sf in r.get("matched_subfields", "").split(";"):
@@ -68,24 +62,15 @@ def stratified_sample(
     per_subfield: int = 2,
     seed: int = 42,
 ) -> list[dict]:
-    """Randomly select `per_subfield` articles from each subfield.
+    """Pick per_subfield papers from each subfield, at random but seeded.
 
-    `rows` is a list of dicts as produced by build_corpus_index.py (each with
-    a `matched_subfields` field of ';'-joined subfield names) — passed in
-    directly rather than read from disk here, so this is trivially
-    unit-testable with fixture rows (tests/test_sample_articles.py).
+    For each subfield, gather every paper tagged with it and pick 2.
+    random.Random(seed) is a fixed dice roll, so the picks are reproducible. If a
+    subfield has fewer than 2 papers we skip it rather than crash (in auto mode).
 
-    When `subfields` is None (the default, used by the CLI), the subfields are
-    taken from whatever the index actually contains, and any subfield with
-    fewer than `per_subfield` articles is skipped with a warning — this keeps
-    the pilot representative across *all* psychology subfields PLOS uses
-    without a hardcoded list. When `subfields` is given explicitly, a subfield
-    short on candidates is an error instead.
+    Passing rows in directly, rather than reading a file here, keeps this easy to
+    unit-test.
     """
-    # The heart of it: for each subfield, gather every paper tagged with it and
-    # randomly pick 2. random.Random(seed) is a fixed-seed dice roll, so the
-    # picks are reproducible. If a subfield has fewer than 2 papers we just skip
-    # it (in auto mode) rather than crash.
     rng = random.Random(seed)
     auto = subfields is None
     if auto:
@@ -123,10 +108,11 @@ def write_csv(articles: list[dict], out_path: str) -> None:
 
 
 def filter_to_local_xml(rows: list[dict]) -> list[dict]:
-    """Drop rows whose xml_path isn't present on disk — ~6% of the Solr index
-    is articles (mostly very recent) not in the local corpus snapshot, which
-    can't be full-text extracted, so they must not be drawn into the pilot."""
-    # Keep only papers whose full-text file actually exists on disk.
+    """Keep only papers whose full-text file actually exists on disk.
+
+    About 6% of the index is papers, mostly very recent, that aren't in the local
+    snapshot. We can't read those, so they must not go into the pilot.
+    """
     kept = [r for r in rows if r.get("xml_path") and os.path.exists(r["xml_path"])]
     dropped = len(rows) - len(kept)
     if dropped:
@@ -143,8 +129,8 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    # Order of operations: load the master list, drop unreadable papers, draw the
-    # stratified sample, write it out, and report what we covered.
+    # Load the master list, drop unreadable papers, draw the sample, write it out,
+    # and report what we covered.
     rows = filter_to_local_xml(load_index(args.index))
     articles = stratified_sample(rows, per_subfield=args.per_subfield, seed=args.seed)
     write_csv(articles, args.out)

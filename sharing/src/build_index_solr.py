@@ -1,31 +1,19 @@
-# ============================================================================
-# PLAIN-ENGLISH NOTES (for colleagues reading this file)
+# NOTES
+# This is the script we run to build the master list of papers
+# (data/corpus_index.csv, about 58,000 rows). It pulls every psychology paper
+# from the search engine, works out each one's subfield and time stage, points
+# at where its full-text file lives, and writes one row per paper.
 #
-# What this file is for: this is the script we actually run to produce the
-# master list of papers (data/corpus_index.csv, ~58,000 rows). It uses
-# solr_client.py to pull every psychology paper from PLOS's search engine,
-# works out each paper's subfield and time-stage, points at where its full-text
-# file lives on disk, and writes one row per paper to a spreadsheet.
+# Run it on the login node. It needs internet but it's light. About 10 to 20
+# minutes.
 #
-# Run it on the login node (it needs internet). It is not heavy - it just talks
-# to the search engine and writes a file, ~10-20 minutes. This REPLACED an
-# earlier version that scanned the downloaded files directly, which we ditched
-# because those files are missing tags for 2015 and part of 2013.
+# It replaced an earlier version that scanned the downloaded files directly. We
+# dropped that because the files are missing tags for 2015 and part of 2013.
 #
-# One deliberate choice: if the search engine returns a paper but we can't find
-# its subfield in the tag paths, we skip it, so the list stays consistent with
-# how we define "psychology" everywhere else.
-# ============================================================================
-
-"""Build the filtered corpus index from PLOS Solr (authoritative, gap-free),
-replacing the XML-scan index that missed taxonomy-less articles (esp. 2015).
-
-Runs on a node with internet (the Rivanna login node) — it's network-bound,
-not compute-bound, so no sbatch needed. Enumerates every psychology PLOS ONE
-research article 2010–2026 from Solr, parses the subfield(s) from the subject
-paths, and maps each DOI to its local allofplos XML file (for later full-text
-extraction). Lead-author institution is left blank here and can be enriched
-from the local XML in a separate CPU step if needed.
+# If the search engine returns a paper but we can't read a subfield out of its
+# tags, we skip it, so the list stays consistent with how we define psychology
+# everywhere else.
+"""Build the master list of psychology papers from the PLOS search index.
 
 Usage:
     python -m src.build_index_solr --out data/corpus_index.csv --corpus-dir "$PLOS_CORPUS"
@@ -51,7 +39,7 @@ logger = logging.getLogger(__name__)
 MIN_YEAR = 2010
 MAX_YEAR = 2026
 
-# The columns of the master list. One row = one paper.
+# Columns of the master list. One row is one paper.
 CSV_FIELDS = [
     "doi",
     "publication_date",
@@ -65,8 +53,8 @@ CSV_FIELDS = [
 
 
 def _parse_date(value: str) -> dt.date | None:
-    # Solr publication_date looks like "2015-02-25T00:00:00Z".
-    # We only want the date part, so chop off everything after the first 10 chars.
+    # Solr dates look like "2015-02-25T00:00:00Z". We only want the date part,
+    # so keep the first 10 characters.
     try:
         return dt.date.fromisoformat(value[:10])
     except (ValueError, TypeError):
@@ -75,10 +63,10 @@ def _parse_date(value: str) -> dt.date | None:
 
 def build_index(out_path: str, corpus_dir: str, start_year: int = MIN_YEAR,
                 end_year: int = MAX_YEAR, log_every: int = 1000) -> int:
-    # Counters so the final log line tells us exactly what happened:
-    # how many the search engine returned (seen), how many we wrote (kept),
-    # how many we dropped for having no readable subfield (no_subfield), and
-    # how many we kept but don't have the full-text file for yet (missing_xml).
+    # Four counters so the final log line says exactly what happened. seen is how
+    # many the engine returned. kept is how many we wrote. no_subfield is how
+    # many we dropped for having no readable subfield. missing_xml is how many we
+    # kept but don't have the full-text file for yet.
     kept = 0
     seen = 0
     no_subfield = 0
@@ -91,16 +79,15 @@ def build_index(out_path: str, corpus_dir: str, start_year: int = MIN_YEAR,
             subjects = doc.get("subject", []) or []
             subfields = psychology_subfields_from_paths(subjects)
             if not subfields:
-                # Solr matched subject:"Psychology" but no standalone Psychology
-                # node in the paths — keep semantics consistent with the XML
-                # parser and skip these.
+                # Solr matched on Psychology but the paths have no real
+                # Psychology node. Skip, to match how we define it elsewhere.
                 no_subfield += 1
                 continue
             doi = doc["id"]
             pub_date = _parse_date(doc.get("publication_date", ""))
             xml_path = doi_to_xml_path(doi, corpus_dir)
             if not os.path.exists(xml_path):
-                # We still record the paper, but note we can't read it yet.
+                # Keep the paper, but note we can't read it yet.
                 missing_xml += 1
             writer.writerow({
                 "doi": doi,
@@ -109,12 +96,12 @@ def build_index(out_path: str, corpus_dir: str, start_year: int = MIN_YEAR,
                 "stage": stage_for_date(pub_date) if pub_date else "",
                 "matched_subfields": ";".join(subfields),
                 "subject": ";".join(subjects),
-                "lead_institution": "",  # filled in later from the local file if needed
+                "lead_institution": "",  # filled from the local file later if needed
                 "xml_path": xml_path,
             })
             kept += 1
             if seen % log_every == 0:
-                # Print progress and flush to disk so we can watch it live.
+                # Print progress and flush so we can watch it live.
                 logger.info("Fetched %d articles, kept %d", seen, kept)
                 f.flush()
     logger.info(

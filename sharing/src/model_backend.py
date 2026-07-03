@@ -1,54 +1,34 @@
-# ============================================================================
-# PLAIN-ENGLISH NOTES (for colleagues reading this file)
+# NOTES
+# The plumbing that runs the AI model on the cluster's graphics cards (GPUs).
+# Everything else produces a prompt. This is what turns a prompt into the
+# model's answer.
 #
-# What this file is for: the plumbing that actually runs the AI model on the
-# cluster's graphics cards (GPUs). Everything else in the project produces a
-# prompt; this is what turns a prompt into the model's answer.
+# Two runners:
+#   VLLMModelClient is the fast one. Built for running lots of prompts and
+#   splitting one huge model across several GPUs. We use this for the real
+#   58,000-paper run.
+#   TransformersModelClient is the simple one. Fine for the pilot or debugging on
+#   one GPU.
 #
-# There are two ways to run it:
-#   - VLLMModelClient: the fast one. It's built for running lots of prompts and
-#     splitting one huge model across several GPUs. This is what we use for the
-#     real 58,000-paper run.
-#   - TransformersModelClient: the simple one. Fine for the small pilot or for
-#     debugging on a single GPU.
+# You don't need the internals unless you're changing how the model runs. The
+# key knob is tensor_parallel_size, which is how many GPUs to spread the
+# 70-billion-parameter model across. It's too big to fit on one.
 #
-# You don't need to read the internals unless you're changing how the model
-# runs. The key knob is "tensor_parallel_size" = how many GPUs to spread the
-# 70-billion-parameter model across (it's too big to fit on one).
-#
-# "temperature = 0" means the model answers as deterministically as possible.
-# We want faithful extraction, not creative writing, so we turn creativity off.
-# ============================================================================
-
-"""Local GPU inference backends for Rivanna, where compute isn't the
-constraint — no hosted API, no rate limits. Both implement the ModelClient
-interface from src/extract_demographics.py (a `.generate(prompt) -> str`
-method), so either drops straight into extract_demographics()/run_pilot.py/run_pipeline.py.
-
-vLLM is the recommended path for anything beyond the 10-article pilot: it
-batches requests and uses paged attention, which matters once you're running
-the full filtered corpus. The transformers backend is a simpler fallback for
-small allocations or debugging on a single GPU.
-
-Neither backend has been exercised in this sandbox (no GPU, no model
-weights, no network to huggingface.co) — see docs/RUNNING_ON_RIVANNA.md for
-how to validate this on an actual Rivanna GPU node before trusting output.
-"""
+# temperature = 0 means the model answers as flatly and repeatably as possible.
+# We want faithful extraction, not creative writing, so creativity is off.
+"""Run the model on the GPUs. Two backends: vLLM (fast) and transformers (simple)."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
 DEFAULT_MAX_NEW_TOKENS = 2048
-DEFAULT_TEMPERATURE = 0.0  # deterministic extraction, not creative generation
+DEFAULT_TEMPERATURE = 0.0  # deterministic extraction, not creative writing
 
 
 @dataclass
 class VLLMModelClient:
-    """Batch-oriented local inference via vLLM's offline LLM API.
-
-    tensor_parallel_size should match the number of GPUs requested in the
-    SLURM job (see slurm/run_pipeline.slurm) — e.g. 4 for a 70B model split
-    across 4x A100-80GB.
+    """The fast runner. tensor_parallel_size should match the number of GPUs the
+    job requests, e.g. 4 for a 70B model split across four A100-80GB cards.
     """
 
     model_id: str
@@ -59,12 +39,11 @@ class VLLMModelClient:
     _llm: object = field(default=None, init=False, repr=False)
 
     def _load(self):
-        # Load the model once, the first time it's needed (it's ~140GB, so we
-        # don't want to load it twice). The "import" is inside the function on
-        # purpose - it's a heavy, GPU-only library we only touch when actually
-        # running on a GPU node.
+        # Load the model once, the first time it's needed. It's about 140GB, so
+        # we don't want to load it twice. The import is inside the function on
+        # purpose. It's a heavy GPU-only library we only touch on a GPU node.
         if self._llm is None:
-            from vllm import LLM  # deferred: heavy import, GPU-only
+            from vllm import LLM
 
             self._llm = LLM(
                 model=self.model_id,
@@ -74,29 +53,25 @@ class VLLMModelClient:
         return self._llm
 
     def generate(self, prompt: str) -> str:
-        # Single prompt in, single answer out.
+        # One prompt in, one answer out.
         return self.generate_batch([prompt])[0]
 
     def generate_batch(self, prompts: list[str]) -> list[str]:
-        # Many prompts at once - much more efficient on a GPU than one at a time.
+        # Many prompts at once. Much more efficient on a GPU than one at a time.
         from vllm import SamplingParams
 
         llm = self._load()
         params = SamplingParams(temperature=self.temperature, max_tokens=self.max_new_tokens)
         outputs = llm.generate(prompts, params)
-        # vLLM does not guarantee output order matches input order; sort by
-        # the prompt's original request index it attaches internally.
+        # vLLM can hand results back out of order, so sort by request id.
         outputs = sorted(outputs, key=lambda o: o.request_id)
         return [o.outputs[0].text for o in outputs]
 
 
 @dataclass
 class TransformersModelClient:
-    """Simpler single-process fallback via Hugging Face `transformers`.
-
-    Loads the model once per process with device_map="auto" (splits across
-    all visible GPUs automatically). Fine for the 10-article pilot; for a
-    full-corpus run prefer VLLMModelClient's batching.
+    """The simple runner. Loads the model once and splits it across whatever GPUs
+    are visible. Fine for the pilot. For the full run prefer the vLLM one.
     """
 
     model_id: str
@@ -107,7 +82,7 @@ class TransformersModelClient:
     def _load(self):
         if self._pipeline is None:
             import torch
-            from transformers import pipeline  # deferred: heavy import
+            from transformers import pipeline
 
             self._pipeline = pipeline(
                 "text-generation",
@@ -131,7 +106,7 @@ class TransformersModelClient:
 
 
 def build_client(model_id: str, backend: str = "vllm", **kwargs):
-    # Pick which runner to use by name. Defaults to the fast one (vllm).
+    # Pick a runner by name. Defaults to the fast one.
     if backend == "vllm":
         return VLLMModelClient(model_id=model_id, **kwargs)
     if backend == "transformers":

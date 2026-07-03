@@ -1,37 +1,20 @@
-# ============================================================================
-# PLAIN-ENGLISH NOTES (for colleagues reading this file)
+# NOTES
+# The big one. This runs the model over all 58,000 papers and writes the final
+# demographics spreadsheet, one row per participant sample. Everything before
+# this was setup. This produces the data the study analyzes.
 #
-# What this file is for: the big one. This runs the model over ALL 58,000 papers
-# and writes the final demographics spreadsheet (one row per participant sample).
-# Everything before this was preparation; this is the step that produces the
-# data the study actually analyzes.
+# Two things make it survivable on a shared supercomputer.
+#   Sharding: the work is split into equal chunks. We launch many copies at once,
+#   each handling every Nth paper, so the whole thing runs in parallel across
+#   many GPUs instead of one slow line.
+#   Restartable: before working on a paper it checks whether that paper is
+#   already in the output file and skips it. So if a job dies halfway, which
+#   happens on shared clusters, you just re-run it and it picks up where it
+#   stopped.
 #
-# Two features make it survivable on a shared supercomputer:
-#   - SHARDING: the work is split into equal chunks ("shards"). We launch many
-#     copies at once, each handling every Nth paper, so 58,000 papers get done
-#     in parallel across many GPUs instead of one slow line.
-#   - RESTARTABLE: before working on a paper it checks whether that paper is
-#     already in the output file, and skips it if so. So if a job gets killed
-#     halfway (which happens on shared clusters), you just re-run it and it
-#     picks up where it stopped instead of starting over.
-#
-# If a single paper fails (bad file, weird model output), it logs the problem
-# and moves on rather than crashing the whole multi-hour run.
-# ============================================================================
-
-"""Full-scale demographic extraction over the entire filtered corpus
-(brief items 1-2: this is what actually answers the research question, as
-opposed to src/run_pilot.py which only covers the 10-article pilot).
-
-Reads data/corpus_index.csv (src/build_corpus_index.py), runs every article
-through the single chosen model (docs/DECISIONS.md #3,
-meta-llama/Llama-3.3-70B-Instruct by default, from config.yaml), and appends
-one row per extracted sample to an output CSV.
-
-Designed to run as a SLURM array job (slurm/run_pipeline.slurm): pass
---shard-index/--shard-count to have each array task process a disjoint slice
-of the index. Safe to re-run — articles already present in the output CSV
-are skipped, so a killed/preempted job just picks up where it left off.
+# If one paper fails (bad file, weird output), it logs it and moves on instead of
+# crashing the whole run.
+"""Run the model over the full master list and write the demographics table.
 
 Usage:
     python -m src.run_pipeline --index data/corpus_index.csv \\
@@ -52,9 +35,9 @@ from src.model_backend import build_client
 
 logger = logging.getLogger(__name__)
 
-# The columns of the final demographics table. Demographic fields come from the
-# model; the metadata fields (subfield, year, stage, ...) are copied from the
-# master list so each row is self-contained for analysis.
+# Columns of the final table. Demographic fields come from the model. The
+# metadata fields (subfield, year, stage, ...) are copied from the master list so
+# each row is self-contained for analysis.
 OUTPUT_FIELDS = [
     "doi",
     "sample_id",
@@ -83,8 +66,8 @@ def load_index(index_csv: str) -> list[dict]:
 
 
 def already_processed_dois(out_path: str) -> set[str]:
-    # Read whatever is already in the output file so we can skip those papers.
-    # This is what makes the run restartable after an interruption.
+    # Read what's already in the output file so we can skip those papers. This is
+    # what makes the run restartable after an interruption.
     if not os.path.exists(out_path):
         return set()
     with open(out_path, newline="", encoding="utf-8") as f:
@@ -92,8 +75,8 @@ def already_processed_dois(out_path: str) -> set[str]:
 
 
 def shard(rows: list[dict], shard_index: int, shard_count: int) -> list[dict]:
-    # Split the work: shard 3 of 8 handles rows 3, 11, 19, 27, ... This "every
-    # Nth row" trick means each parallel job gets a fair, non-overlapping slice.
+    # Split the work. Shard 3 of 8 handles rows 3, 11, 19, 27, and so on. Every
+    # Nth row means each parallel job gets a fair, non-overlapping slice.
     if shard_count <= 1:
         return rows
     return [row for i, row in enumerate(rows) if i % shard_count == shard_index]
@@ -120,8 +103,8 @@ def run(
             doi = article["doi"]
             if doi in done:
                 continue
-            # Run the model on this paper. If anything goes wrong - bad output,
-            # unreadable file - log it and move on. One bad paper must not sink
+            # Run the model on this paper. If anything goes wrong, bad output or
+            # an unreadable file, log it and move on. One bad paper must not sink
             # an hours-long run.
             try:
                 samples = extract_demographics_from_xml(doi, article["xml_path"], client)
@@ -133,9 +116,8 @@ def run(
                 continue
 
             for sample in samples:
-                # Serialize dict-valued fields to JSON text so they round-trip
-                # cleanly through CSV (csv.writer would otherwise fall back to
-                # Python repr(), which json.loads() can't parse back).
+                # Store the percentage fields as JSON text so they survive the
+                # round trip through the CSV cleanly.
                 sample = {
                     **sample,
                     "gender_pct": json.dumps(sample.get("gender_pct") or {}),

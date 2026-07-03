@@ -1,32 +1,19 @@
-# ============================================================================
-# PLAIN-ENGLISH NOTES (for colleagues reading this file)
+# NOTES
+# The payoff. Takes the finished demographics spreadsheet and turns it into the
+# actual answers. For each demographic (gender, race, education, socioeconomic
+# status) it computes two things:
+#   Reporting rate: what fraction of samples reported it, by year and by the four
+#   time stages. This is the headline number. "X% of psychology papers in 2020
+#   reported participant race."
+#   Average composition: among papers that did report it, the average breakdown,
+#   like mean percent female. This describes who the samples were.
 #
-# What this file is for: the payoff. It takes the finished demographics
-# spreadsheet and turns it into the actual answers, for each demographic
-# (gender, race, education, socioeconomic status):
+# It writes one small summary spreadsheet per demographic per grouping, plus
+# optional trend charts. Socioeconomic status is handled on its own because it
+# uses a 0/1/2 detail scale instead of a plain yes/no.
 #
-#   1. Reporting rate: what fraction of participant samples reported it, broken
-#      out by year and by the four time-stages. This is the headline number -
-#      "X% of psychology papers in 2020 reported participant race," etc.
-#   2. Average composition: among papers that DID report it, the average
-#      breakdown (e.g. mean % female). This describes who the samples were.
-#
-# It writes one small summary spreadsheet per demographic per grouping, and
-# optional trend-line charts. Socioeconomic status is handled separately because
-# it uses a 0/1/2 detail scale instead of a plain yes/no.
-#
-# This is standard data-summarizing with the pandas library; no AI here.
-# ============================================================================
-
-"""Answer the brief's main goal: how does demographic reporting in PLOS ONE
-psychology articles change over time, year by year and by stage.
-
-Reads data/demographics_table.csv (src/run_pipeline.py output) and writes,
-for each of gender/race/education/ses:
-  - reporting rate (% of samples that report it) by year and by stage
-  - mean reported percentage per subgroup (e.g. mean %female) by year and
-    by stage, among samples that do report it
-plus optional trend-line plots.
+# Standard data summarizing with pandas. No AI here.
+"""Turn the demographics table into reporting-rate trends by year and stage.
 
 Usage:
     python -m src.analyze_trends --table data/demographics_table.csv --out-dir data/analysis
@@ -39,8 +26,8 @@ import os
 
 import pandas as pd
 
-# The three demographics that use a plain yes/no + percentage breakdown.
-# (Socioeconomic status is handled on its own further down.)
+# The three demographics that use a plain yes/no plus a percentage breakdown.
+# Socioeconomic status is handled separately further down.
 CATEGORIES = {
     "gender": ("gender_reported", "gender_pct"),
     "race": ("race_reported", "race_pct"),
@@ -50,8 +37,8 @@ STAGE_ORDER = ["early", "middle", "covid", "post_covid"]
 
 
 def load_table(table_csv: str) -> pd.DataFrame:
-    # Load the demographics table. The percentage columns are stored as JSON text
-    # (e.g. '{"male": 45, "female": 55}'), so turn those back into real objects.
+    # Load the table. The percentage columns are stored as JSON text, like
+    # '{"male": 45, "female": 55}', so turn those back into real objects.
     df = pd.read_csv(table_csv)
     for _, pct_col in CATEGORIES.values():
         df[pct_col] = df[pct_col].apply(_safe_json_loads)
@@ -59,7 +46,7 @@ def load_table(table_csv: str) -> pd.DataFrame:
 
 
 def _safe_json_loads(value):
-    # Turn the stored text back into a dictionary; return {} if it's unparseable.
+    # Turn the stored text back into a dict. Return {} if it won't parse.
     if isinstance(value, dict):
         return value
     try:
@@ -69,8 +56,8 @@ def _safe_json_loads(value):
 
 
 def reporting_rate(df: pd.DataFrame, reported_col: str, group_col: str) -> pd.DataFrame:
-    # For each year (or stage), what percent of samples had reported == 1?
-    # This is the core "how often is it reported" number.
+    # For each year (or stage), what percent of samples had reported == 1. This
+    # is the core "how often is it reported" number.
     return (
         df.groupby(group_col)[reported_col]
         .apply(lambda s: 100 * (s == 1).sum() / len(s))
@@ -80,8 +67,8 @@ def reporting_rate(df: pd.DataFrame, reported_col: str, group_col: str) -> pd.Da
 
 
 def mean_subgroup_pct(df: pd.DataFrame, reported_col: str, pct_col: str, group_col: str) -> pd.DataFrame:
-    # Among samples that DID report this demographic, average each subgroup's
-    # percentage (e.g. average % female, average % white) per year or stage.
+    # Among samples that did report this demographic, average each subgroup's
+    # percentage (mean percent female, mean percent white) by year or stage.
     reported = df[df[reported_col] == 1]
     records = []
     for _, row in reported.iterrows():
@@ -100,7 +87,7 @@ def mean_subgroup_pct(df: pd.DataFrame, reported_col: str, pct_col: str, group_c
 
 
 def order_stage_column(df: pd.DataFrame) -> pd.DataFrame:
-    # Make the four stages sort in time order (early -> post_covid) not alphabetically.
+    # Make the four stages sort in time order, not alphabetically.
     if "stage" in df.columns:
         df["stage"] = pd.Categorical(df["stage"], categories=STAGE_ORDER, ordered=True)
         df = df.sort_values("stage")
@@ -131,9 +118,8 @@ def run(table_csv: str, out_dir: str, make_plots: bool = True) -> None:
                 _plot(rate_df, group_col, "reporting_rate_pct", category,
                       os.path.join(out_dir, f"{category}_reporting_rate_by_{group_col}.png"))
 
-    # SES uses a 0/1/2 reporting-detail scale rather than reported/not, so it
-    # gets its own summary instead of reusing reporting_rate()/mean_subgroup_pct().
-    # Here we report the share of samples at each detail level (0/1/2) per period.
+    # SES uses a 0/1/2 detail scale, not reported/not, so it gets its own
+    # summary. Here we report the share of samples at each level (0/1/2) per period.
     for group_col in ("year", "stage"):
         ses_df = (
             df.groupby(group_col)["ses_reported"]
@@ -151,11 +137,11 @@ def run(table_csv: str, out_dir: str, make_plots: bool = True) -> None:
 
 def _plot(df: pd.DataFrame, x_col: str, y_col: str, category: str, out_path: str) -> None:
     # Draw a simple trend line of reporting rate over time and save it as a PNG.
-    # Skips quietly if the plotting library isn't installed or there's no data.
+    # Skips quietly if matplotlib isn't installed or there's no data.
     try:
         import matplotlib
 
-        matplotlib.use("Agg")  # no display needed - just save image files
+        matplotlib.use("Agg")  # no display needed, just save image files
         import matplotlib.pyplot as plt
     except ImportError:
         return

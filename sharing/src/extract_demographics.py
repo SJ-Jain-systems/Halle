@@ -1,28 +1,19 @@
-# ============================================================================
-# PLAIN-ENGLISH NOTES (for colleagues reading this file)
+# NOTES
+# This is where we tell the model what to do and check what it gives back. It
+# holds the exact instruction we send with each paper, the list of fields every
+# answer must have, and a strict checker that rejects anything malformed.
 #
-# What this file is for: this is where we tell the model what to do and check
-# what it gives back. It holds:
-#   - the exact instruction (the "prompt") we send with each paper,
-#   - the list of fields every answer must contain,
-#   - a strict checker that rejects anything malformed.
+# The design that matters: one row per participant sample. If a paper ran three
+# studies with three groups of people, we want three rows, all sharing the
+# paper's ID. That's baked into the instruction.
 #
-# The design that matters: ONE ROW PER PARTICIPANT SAMPLE. If a paper ran three
-# studies with three different groups of people, we want three rows, all sharing
-# the paper's ID. That is baked into the instruction.
-#
-# The checker (parse_and_validate) is deliberately harsh. If the model returns
-# broken data or invents an ID, we throw it out and flag it rather than let bad
-# numbers quietly pollute the dataset. Garbage in the demographics table would
-# corrupt the final trends, so we would rather fail loudly.
-# ============================================================================
+# The checker is deliberately harsh. If the model returns broken data or invents
+# an ID, we throw it out and flag it. Bad numbers here would corrupt the final
+# trends, so we fail loudly instead of letting junk through.
+"""The model instruction plus a strict checker for what it returns.
 
-"""Turn full-text article XML into demographic-table rows (brief item "Extract
-demographics" / item 2).
-
-One row per distinct sample reported in an article — a single article with
-three separate demographic samples yields three rows, all sharing the same
-`doi`.
+One row per participant sample. A paper with three samples gives three rows, all
+sharing the same DOI.
 """
 from __future__ import annotations
 
@@ -31,7 +22,7 @@ from dataclasses import dataclass
 
 from src.jats_xml import get_extraction_text
 
-# Every answer row MUST contain exactly these fields. Anything missing = reject.
+# Every answer row must contain exactly these fields. Anything missing, reject.
 REQUIRED_KEYS = {
     "doi",
     "sample_id",
@@ -45,8 +36,8 @@ REQUIRED_KEYS = {
     "ses_value",
 }
 
-# The actual instruction sent to the model, with the paper's text pasted in at
-# the bottom. It spells out the four demographics, the 0/1 "did they report it"
+# The instruction sent to the model, with the paper's text pasted in at the
+# bottom. It spells out the four demographics, the 0/1 "did they report it"
 # flags, and demands clean JSON so the checker below can parse it.
 EXTRACTION_PROMPT_TEMPLATE = """\
 You are coding a psychology research article for a systematic review of
@@ -71,16 +62,16 @@ Article text:
 
 
 class ExtractionValidationError(ValueError):
-    """Raised when a model's output doesn't match the required row schema."""
+    """Raised when the model's output doesn't match the required fields."""
 
 
 @dataclass
 class ModelClient:
-    """Minimal interface a model backend must implement."""
+    """Placeholder interface. The real runners in model_backend.py fill in
+    generate(). Keeping this abstract means the extraction code doesn't care
+    which model or hardware is used. Anything with a .generate() works.
+    """
 
-    # This is a placeholder. The real model runners (in model_backend.py) fill in
-    # generate(). Keeping this abstract means the extraction logic doesn't care
-    # WHICH model or hardware is used - anything with a .generate() works.
     model_id: str
 
     def generate(self, prompt: str) -> str:  # pragma: no cover - backend-specific
@@ -96,15 +87,12 @@ def build_prompt(doi: str, article_text: str) -> str:
 
 
 def parse_and_validate(raw_output: str, expected_doi: str) -> list[dict]:
-    """Parse a model's raw text response into validated demographic rows.
+    """Turn the model's raw text into checked rows, or reject it.
 
-    Raises ExtractionValidationError on malformed JSON or a missing/mismatched
-    required field, rather than silently returning partial/garbage rows —
-    correctness of this data feeds directly into the research analysis.
+    Three checks. Is it valid JSON. Is it a list. Does every row have all the
+    required fields and the right paper ID. Any no, and we reject the whole
+    thing. This is the wall that keeps bad data out of the study.
     """
-    # Step 1: is it even valid JSON? Step 2: is it a list? Step 3: does every row
-    # have all the required fields and the right paper ID? Any "no" and we reject
-    # the whole thing. This is the wall that keeps bad data out of the study.
     try:
         rows = json.loads(raw_output)
     except json.JSONDecodeError as exc:
@@ -120,7 +108,7 @@ def parse_and_validate(raw_output: str, expected_doi: str) -> list[dict]:
         if missing:
             raise ExtractionValidationError(f"Row {i} missing required keys: {sorted(missing)}")
         if row["doi"] != expected_doi:
-            # Guards against the model hallucinating a different paper's ID.
+            # Guards against the model inventing a different paper's ID.
             raise ExtractionValidationError(
                 f"Row {i} doi {row['doi']!r} does not match article doi {expected_doi!r}"
             )
@@ -128,19 +116,17 @@ def parse_and_validate(raw_output: str, expected_doi: str) -> list[dict]:
 
 
 def extract_demographics(doi: str, article_text: str, client: ModelClient) -> list[dict]:
-    # The straight-line version: build the prompt, ask the model, check the answer.
+    # Straight line: build the prompt, ask the model, check the answer.
     prompt = build_prompt(doi, article_text)
     raw_output = client.generate(prompt)
     return parse_and_validate(raw_output, expected_doi=doi)
 
 
 def extract_demographics_from_xml(doi: str, xml_path: str, client: ModelClient) -> list[dict]:
-    """Convenience wrapper: pull Methods/Participants-first text straight out
-    of the local corpus XML (src/jats_xml.py) and extract from it. This is
-    what src/run_pipeline.py and src/run_pilot.py actually call — nothing
-    downloads full text over the network, it's already on disk.
+    """Read the paper's text off disk, then run the extraction.
+
+    This is what the pipeline actually calls. No network. The file is already
+    local.
     """
-    # The version the pipeline actually calls: read the paper's text off disk,
-    # then run the extraction. No network involved - the file is already local.
     article_text = get_extraction_text(xml_path)
     return extract_demographics(doi, article_text, client)
