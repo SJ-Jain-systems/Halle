@@ -1,133 +1,248 @@
 ---
 title: "Demographic Reporting in PLOS ONE Psychology Articles"
-subtitle: "Project progress report — building the dataset"
+subtitle: "A detailed progress report on building the dataset and pipeline"
 date: today
 format:
   html:
     toc: true
-    toc-depth: 2
+    toc-depth: 3
+    number-sections: true
     code-fold: false
     theme: cosmo
   pdf:
     toc: true
+    number-sections: true
 ---
 
-## What this project is trying to answer
+# The question we're answering
 
-We want to know how well psychology studies published in the journal *PLOS ONE*
-report the **demographics of the people they study** — the participants' gender,
-race, education, and socioeconomic status — and whether that reporting has
-**changed over time**, from 2010 through 2026.
+When psychologists publish a study, they recruit participants — and ideally they
+tell the reader **who those participants were**: their gender, race, education,
+and economic background. That information matters enormously. If a study on, say,
+memory or stress only recruited young, white, college-educated participants but
+never says so, a reader might wrongly assume the findings apply to everyone. The
+technical word for this is **representativeness**.
 
-The bigger question behind this is representativeness: if researchers don't
-report who their participants are, we can't tell whether findings generalize
-beyond a narrow slice of the population. Tracking reporting habits year by year
-tells us whether the field is improving.
+This project asks two things:
 
-To do this at scale, we can't read tens of thousands of papers by hand. So the
-plan is to have a large language model (an AI system) read each paper's methods
-section and pull out the demographic details into a spreadsheet we can analyze.
+1. **How often do psychology papers actually report participant demographics?**
+2. **Has that reporting improved over time** — specifically from 2010 to 2026?
 
-We split the work into four time periods for comparison:
+We focus on one journal, *PLOS ONE*, because it's very large, multidisciplinary,
+and — crucially — makes every article freely and openly available, which lets us
+analyze tens of thousands of papers rather than a handful.
 
-| Stage | Years | Why |
-|-------|-------|-----|
-| Early | 2010–2014 | Baseline |
-| Middle | 2015–2019 | Pre-pandemic |
-| COVID | 2020–2023 | Pandemic era |
+Because reading tens of thousands of papers by hand is impossible, the core idea
+is to have a **large language model** (an AI system that can read and summarize
+text) go through each paper's methods section and pull the demographic details
+into a structured spreadsheet. We then analyze that spreadsheet for trends.
+
+## The four time periods
+
+To see change over time, we group the years into four stages that reflect
+meaningful periods:
+
+| Stage | Years | Rationale |
+|-------|-------|-----------|
+| Early | 2010–2014 | Baseline era |
+| Middle | 2015–2019 | Settled, pre-pandemic |
+| COVID | 2020–2023 | Pandemic disruption |
 | Post-COVID | 2024–2026 | Recovery |
 
-## How the pipeline works, in plain terms
+# Exactly what we're extracting from each paper
 
-Think of it as an assembly line. Each stage hands its output to the next:
+For every distinct group of participants a paper describes, we record whether —
+and how — it reported each demographic. This coding scheme comes directly from
+the project brief:
+
+| Demographic | What we record |
+|-------------|----------------|
+| **Gender** | Reported? (yes/no) and the percentage breakdown (male / female / other) |
+| **Race** | Reported? (yes/no) and the percentage breakdown (white / black / hispanic / asian / other) |
+| **Education** | Reported? (yes/no) and the percentage with vs. without college |
+| **Socioeconomic status** | A 0/1/2 scale: 0 = not reported, 1 = described only in words (e.g. "low income"), 2 = reported with an actual number (e.g. "below \$30,000") |
+
+Two important design details:
+
+- **One row per participant group.** A single paper might run three separate
+  studies with three different samples. Each becomes its own row in the
+  spreadsheet, all sharing the same article ID (its DOI). This keeps the data
+  honest — we don't average away differences between a paper's samples.
+- **We also record metadata** for each article: its publication date, the
+  corresponding author's institution, and its PLOS subject tags.
+
+## Which papers count
+
+Not every article qualifies. An article is included only if it is:
+
+- an **empirical research article** (not an editorial, correction, or review),
+- published in **PLOS ONE**,
+- tagged by PLOS as **psychology** (any psychology subfield),
+- published **2010–2026**.
+
+There's no minimum sample size — the brief explicitly wants all sample sizes.
+
+# The pipeline, as an assembly line
+
+The whole system is a sequence of stages, each producing a file the next stage
+consumes:
 
 ```
-Find the psychology papers  →  Pick a small test batch  →  Have the AI read them
-        (done)                       (done)                    (next step)
-        →  Check the AI's accuracy  →  Run it on all ~55,000 papers  →  Analyze trends
+1. Find every qualifying psychology paper   →  a master list (58,467 papers)   [DONE]
+2. Draw a small pilot batch to test the AI  →  46 papers                        [DONE]
+3. Run the AI on the pilot                  →  extracted demographics            [NEXT]
+4. Grade the AI's accuracy by hand          →  go / fix-and-retry decision
+5. Run the AI on all 58,467 papers          →  the full demographics table
+6. Analyze the table                        →  trends by year and stage (the answer)
 ```
 
-We are currently at the end of stage two: we have the full list of papers and a
-small pilot batch ready for the AI to test on.
+We're currently at the end of stage 2. Stages 1 and 2 are done and verified;
+everything below documents how we got there and what remains.
 
-## Three decisions we had to make up front
+## A note on infrastructure
 
-**1. Where do we get the papers?** PLOS publishes all its articles, and there
-are two ways in: download every article as a file (a project called
-*allofplos*), or query PLOS's search engine (called *Solr*). We ended up using
-**both** — the search engine to *find* the right papers, and the downloaded
-files to *read* their full text. (More on why below — this took some
-detective work.)
+All of this runs on **Rivanna**, the University of Virginia's high-performance
+computing cluster (a supercomputer). We use it for two reasons: the AI model is
+far too large to run on a normal laptop (it needs multiple high-end graphics
+cards), and the full run over 58,467 papers is split into parallel chunks across
+many processors to finish in a reasonable time. The code is written to survive
+interruptions and reconnect cleanly, because these jobs run for hours.
 
-**2. How do we pick a test batch?** Before trusting the AI on 55,000 papers, we
-test it on a handful and check its work by hand. We pick **2 papers from each
-psychology subfield** so the test covers the whole range of topics, not just the
-most common ones.
+# Decision 1: Where the data comes from
 
-**3. Which AI model?** We chose **Llama 3.3 (70B)** — a large, accurate
-open model — over a smaller, cheaper alternative. Because we're running on the
-university's supercomputer (Rivanna), the cost of the bigger model isn't a
-concern, and accuracy matters most: a missed or made-up demographic number would
-distort the whole analysis.
+This was the most involved part of the project, and it's worth telling in full
+because the twists shaped the final design.
 
-## Getting the data: a detour worth documenting
+## First attempt: download everything
 
-This is where the project got interesting. Our first plan was to download every
-PLOS article and read each one's built-in subject labels to find the psychology
-papers. Every article is tagged by PLOS with topics like
-"Biology → Psychology → Social psychology."
+PLOS runs an open project called **allofplos** that lets you download *every*
+PLOS article as a file. We did that — about **391,000 articles**, roughly 9 GB
+compressed. Each article file contains not just the text but PLOS's own subject
+tags, which look like a hierarchy:
 
-We wrote code to read those tags:
+```
+Biology and life sciences  →  Psychology  →  Social psychology
+```
+
+The plan was simple: read those tags from each file, keep the ones tagged
+psychology, and never touch the internet again. We wrote code to walk down to the
+subfield sitting directly under "Psychology":
 
 ```python
-# Simplified: find the psychology subfield an article is tagged with
 def get_psychology_subfields(article):
-    # PLOS nests tags like:  Psychology > Social psychology
-    # We grab the specific subfield sitting under "Psychology"
-    ...
-    return subfields   # e.g. ["Social psychology"]
+    """Return the psychology subfield(s) an article is tagged with.
+    e.g. Biology → Psychology → Social psychology  ->  ["Social psychology"]
+    """
+    subfields = []
+    for node in article.subject_nodes:
+        if node.text == "Psychology":
+            # grab the tag(s) nested one level under Psychology
+            subfields.extend(child.text for child in node.children)
+    return subfields
 ```
 
-When we ran this across all 391,000 downloaded articles, it worked — but a
-routine sanity check turned up something odd. Counting the psychology papers we
-found per year:
+## Detour A: the tags had changed format over the years
+
+The first version found *zero* psychology papers. The reason: PLOS relabeled
+their tagging system over time. Older articles used a tag type called
+`Discipline`; newer ones used `Discipline-v3`. Our code only looked for the old
+name. A one-line fix — accept any tag type starting with "Discipline" — brought
+the psychology papers back.
+
+## Detour B: "all subfields," not a fixed list
+
+The brief named five subfields (social, cognitive, developmental, clinical,
+quantitative psychology). But checking against real data revealed two things:
+PLOS doesn't use the term "Quantitative psychology" at all, and it *does* use
+several the brief didn't mention (Experimental psychology, Psychometrics,
+Behavior, Emotions, and more). Rather than force the data into a preset list, we
+switched to a **taxonomy-driven** approach: keep every paper PLOS tags under
+Psychology, and record whatever specific subfield it assigned. This is more
+faithful to how the field actually organizes itself.
+
+## Detour C: the 2015 mystery
+
+Then a routine sanity check — just counting how many psychology papers we found
+per year — turned up something alarming:
 
 ```
 2014: 2,002 papers
-2015:    12 papers   ← almost nothing?!
+2015:    12 papers    ← this cannot be right
 2016: 2,100 papers
 ```
 
-**The year 2015 had almost no psychology papers.** That's not believable — 2015
-was a normal year. Something was wrong.
+An almost-empty year sitting between two full ones. We wrote a small diagnostic
+to compare, per year, how many papers *had* psychology tags versus how many
+merely mentioned "psycholog" anywhere. The result:
 
-Digging in, we found the cause: for about **99% of 2015 articles, the downloaded
-files simply don't contain the subject tags at all**. PLOS applied those tags on
-their website but never embedded them in the files for that period. No amount of
-clever code can read a label that isn't there. Losing 2015 would have gutted our
-"Middle" time period.
-
-The fix: PLOS's **search engine does have the tags for every article**, even the
-ones missing from the files. So we switched to asking PLOS's search engine
-directly: "give me every PLOS ONE psychology research article from 2010 to
-2026." One important lesson learned — the query needs a specific setting
-(`doc_type:full`) or it returns millions of irrelevant fragments:
-
-```bash
-# Ask PLOS's search engine for 2015 psychology papers
-curl 'https://api.plos.org/search?q=*:*&fq=doc_type:full&fq=journal:"PLOS ONE"
-      &fq=article_type:"Research Article"&fq=subject:"Psychology"
-      &fq=publication_date:[2015-01-01T00:00:00Z TO 2015-12-31T23:59:59Z]'
+```
+year | total papers | tagged psychology | mentions "psycholog"
+2014 |     594      |        37         |        38
+2015 |     561      |         1         |         1     ← the tags are simply gone
+2016 |     435      |        35         |        35
 ```
 
-That query returned **4,346 psychology papers for 2015** — the year that had
-looked empty. Problem solved, and we still use the downloaded files for the one
-thing they're reliable for: the full text the AI needs to read.
+The culprit: for **about 99% of 2015 articles (and ~37% of 2013), the downloaded
+files contain no subject tags at all** — just a bare "Research Article" heading.
+PLOS classified these papers on their website but never embedded the tags in the
+downloadable files for that period. You can't read a label that was never
+written. Losing 2015 would have crippled the entire "Middle" (2015–2019) stage of
+the analysis.
 
-## The finished article list
+## The fix: ask PLOS's search engine instead
 
-After switching to the search engine, the numbers look healthy across every
-year — no gaps:
+PLOS also runs a **search engine** (called Solr) that *does* hold the
+authoritative tags for every article, including the ones missing from the files.
+So we changed strategy: use the search engine to *find* the right papers, and
+keep the downloaded files only for what they're reliable for — the full text the
+AI needs to read. (This is actually the design the original brief proposed.)
+
+Getting the search query right took one key lesson — without a specific setting,
+`doc_type:full`, the search returns millions of internal fragments instead of
+articles:
+
+```python
+# The query that reliably enumerates psychology papers for a given year
+filters = [
+    'doc_type:full',                       # <- essential; return whole articles only
+    'journal:"PLOS ONE"',
+    'article_type:"Research Article"',
+    'subject:"Psychology"',
+    f'publication_date:[{year}-01-01T00:00:00Z TO {year}-12-31T23:59:59Z]',
+]
+```
+
+Watching each filter narrow the results confirmed it was working correctly:
+
+```
+q=*:* only                  : 3,487,529   (everything indexed, incl. fragments)
++ doc_type:full             :   411,419   (actual articles, all journals)
++ journal:"PLOS ONE"        :   332,150
++ article_type Research     :   313,425
++ date = 2015               :    28,107   (PLOS ONE research articles in 2015)
++ subject Psychology        :     4,346   (2015 psychology — recovered!)
+```
+
+**2015 went from 12 papers to 4,346.** The search engine reads the subfield out
+of paths like `/Biology and life sciences/Psychology/Cognitive psychology/...`,
+which we parse the same way as before (the segment right after "Psychology").
+
+## Data-quality issues we handled along the way
+
+Real-world data is messy. Two things we built in tolerance for:
+
+- **One corrupted file.** During the file scan, a single article
+  (`journal.ppat.1003829.xml`) was truncated and couldn't be read. The code logs
+  it and moves on rather than crashing — one bad file out of 391,000 shouldn't
+  stop a multi-hour job.
+- **Missing full text for recent papers.** About 6% of the papers the search
+  engine found (mostly very recent 2025–2026 articles) aren't in our downloaded
+  file snapshot yet, so we can't read their full text. Those are flagged and set
+  aside so we never accidentally try to analyze a paper we can't open.
+
+# The finished master list
+
+After switching to the search engine, the per-year counts are smooth — no gaps:
 
 ```python
 total: 58,467 psychology articles
@@ -136,49 +251,145 @@ by year:
   2011: 1,886  2015: 4,346   2019: 3,219   2023: 3,761
   2012: 2,481  2016: 3,663   2020: 3,548   2024: 4,249
   2013: 4,478  2017: 3,367   2021: 3,714   2025: 5,009
+                                            2026: 2,391 (partial year)
 by stage:
   early: 13,947   middle: 18,087   covid: 14,784   post-covid: 11,649
 ```
 
-(2010 is genuinely smaller because PLOS ONE was younger then — that's a real
-trend, not an error.) About 6% of these are very recent papers we don't yet have
-the full text for, so those are set aside for the reading step.
+(2010 is genuinely smaller because PLOS ONE was a younger, smaller journal then —
+a real trend, not an error. 2026 is partial because the year isn't over.)
 
-## The pilot test batch
+# Decision 2: The pilot test batch
 
-Finally, we drew the small batch to test the AI on. We take 2 papers from each
-psychology subfield PLOS uses, chosen at random but with a fixed "seed" so the
-selection is reproducible — anyone re-running it gets the exact same 46 papers:
+Before trusting the AI on 58,467 papers, we test it on a small batch and check
+its work by hand. Two design choices matter here:
 
-```bash
-python -m src.sample_articles --index data/corpus_index.csv \
-                              --out data/sampled_articles.csv
+- **Stratified, not random.** If we picked papers purely at random, common
+  subfields like social and cognitive psychology would dominate and rare ones
+  might not appear at all. Instead we take **2 papers from each subfield**, so
+  the test covers the full range of writing styles and topics.
+- **Reproducible.** The selection uses a fixed random "seed," so anyone re-running
+  it draws the exact same papers — important for a transparent, checkable process.
+
+```python
+def stratified_sample(papers, per_subfield=2, seed=42):
+    rng = random.Random(seed)                     # fixed seed = reproducible
+    picked = []
+    for subfield in all_subfields(papers):        # every subfield present
+        candidates = [p for p in papers if subfield in p.subfields]
+        if len(candidates) >= per_subfield:       # skip subfields with too few
+            picked += rng.sample(candidates, per_subfield)
+    return picked
 ```
 
-Result: **46 papers spanning 23 subfields** — Social psychology, Cognitive
-psychology, Developmental psychology, Personality, Emotions, Psychometrics, and
-more. This is the batch we'll use to check the AI's accuracy before committing to
-all 55,000.
+Running it produced **46 papers across 23 subfields** — Social, Cognitive,
+Developmental psychology, Personality, Emotions, Psychometrics, Behavior, and
+more. This is the batch the AI will be tested on.
 
-## What happens next
+# Decision 3: Which AI model
 
-1. **Run the pilot** — have Llama 3.3 read the 46 test papers and extract their
-   demographic details.
-2. **Check its work by hand** against a scoring guide (did it catch every
-   reported group? Are the percentages right?).
-3. **Run the full extraction** on all ~55,000 papers (split across the
-   supercomputer's GPUs).
-4. **Analyze the trends** — reporting rates for gender, race, education, and
-   socioeconomic status, year by year and across the four time periods. This is
-   the answer to the original question.
+The brief offered two candidate models; we had to pick one:
 
-## Where the code and details live
+| | Mistral-7B | **Llama-3.3-70B** (chosen) |
+|---|---|---|
+| Size | 7 billion parameters | 70 billion parameters |
+| Accuracy on structured extraction | Weaker; more prone to missing or inventing numbers | Stronger; more reliable |
+| Cost to run | Cheap, runs on modest hardware | Needs multiple high-end GPUs |
 
-Everything is version-controlled on GitHub (repository: *SJ-Jain-systems/Halle*).
-Key documents for the curious:
+We chose **Llama-3.3-70B**. The deciding factor is accuracy: a missed or invented
+demographic percentage directly distorts the representativeness findings, which is
+the whole point of the study. Running on Rivanna removes the cost concern that
+would otherwise favor the smaller model. The pilot exists precisely to confirm
+this choice holds up before the full run.
 
-- `docs/DECISIONS.md` — the three decisions above, with the full reasoning
-- `docs/RUNNING_ON_RIVANNA.md` — step-by-step instructions to run the whole
-  pipeline on the university supercomputer
-- `docs/SCORING_RUBRIC.md` — how we'll grade the AI's accuracy on the pilot
-- `src/` — the actual code for each stage
+# How the AI extraction will work
+
+Each paper's text is handed to the model with a precise instruction that spells
+out exactly what to return and in what format:
+
+```text
+You are coding a psychology research article for a systematic review of
+demographic reporting. For EACH distinct participant sample, extract:
+ - gender: reported? (0/1) and percentage breakdown (male/female/other)
+ - race:   reported? (0/1) and percentage breakdown (white/black/hispanic/asian/other)
+ - education: reported? (0/1) and percentage with vs. without college
+ - socioeconomic status: 0 = not reported, 1 = words only, 2 = a specific number
+
+Respond with ONLY a JSON array, one element per sample, with these exact keys...
+```
+
+Two safeguards are built in:
+
+- **Strict format checking.** The model must return clean, structured data with
+  exactly the required fields; anything malformed is caught and flagged rather
+  than silently polluting the dataset.
+- **Focus on the right section.** The code pulls the paper's Methods/Participants
+  text to the front, since that's where demographics almost always live — this
+  keeps the model's attention on the relevant part of long papers.
+
+# How the full run scales
+
+Running 58,467 papers through a 70-billion-parameter model is heavy. The pipeline
+handles this by **splitting the work into independent chunks** ("shards") that run
+in parallel across many of the supercomputer's GPUs. Each chunk writes its own
+results file, and the run is **restartable** — if a job is interrupted, it skips
+the papers it already finished and picks up where it left off. This is essential
+for jobs that run for hours and might get preempted.
+
+# How the analysis answers the question
+
+Once the full demographics table exists, the final step computes, for each
+demographic and each year (and each of the four stages):
+
+- the **reporting rate** — what fraction of samples reported gender / race /
+  education / socioeconomic status, and
+- the **average composition** — e.g. the mean percentage female among papers that
+  did report gender.
+
+Plotting these over 2010–2026 is the direct answer to the original question: is
+demographic reporting in psychology improving, and how does it differ across the
+early, middle, COVID, and post-COVID periods?
+
+# Where things stand
+
+| Stage | Status |
+|-------|--------|
+| Master list of 58,467 psychology papers (2010–2026), gap-free | ✅ Done |
+| 46-paper pilot batch across 23 subfields | ✅ Done |
+| Run the pilot through Llama-3.3-70B | ⏭ Next |
+| Grade the pilot's accuracy by hand | Pending |
+| Full extraction over all 58,467 papers | Pending |
+| Trend analysis (the findings) | Pending |
+
+# Reproducibility: where everything lives
+
+All code and documentation is version-controlled on GitHub (repository
+*SJ-Jain-systems/Halle*). The project is organized so each stage is a separate,
+testable piece:
+
+```
+src/
+  solr_client.py          find psychology papers via PLOS's search engine
+  build_index_solr.py     write the master list of 58,467 papers
+  jats_xml.py             read metadata and full text from the article files
+  sample_articles.py      draw the stratified pilot batch
+  extract_demographics.py the AI instruction + strict format checking
+  model_backend.py        run the Llama model on the GPUs
+  run_pipeline.py         full run, split into restartable parallel chunks
+  analyze_trends.py       compute reporting rates by year and stage
+docs/
+  DECISIONS.md            the three decisions, with full reasoning
+  RUNNING_ON_RIVANNA.md   step-by-step run instructions for the supercomputer
+  SCORING_RUBRIC.md       how we grade the AI's pilot accuracy
+scripts/                  the diagnostics that caught the 2015 gap and more
+tests/                    automated checks (33 of them) for the non-AI logic
+```
+
+Two things worth emphasizing for anyone auditing this work:
+
+- **The logic is tested.** 33 automated tests cover the parsing, filtering,
+  sampling, and analysis code — everything except the AI itself, which is graded
+  by hand on the pilot.
+- **The detours are documented, not hidden.** The diagnostic scripts that
+  uncovered the tag-format change and the 2015 gap are kept in the repository, so
+  the reasoning behind every design choice is traceable.
