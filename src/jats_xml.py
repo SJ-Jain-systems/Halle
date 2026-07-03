@@ -109,11 +109,22 @@ def get_subjects(tree: etree._ElementTree) -> tuple[list[str], list[str]]:
     document order and deduplicated; `subject_level_1` is just the top-level
     term of each Discipline branch (an article can carry more than one
     Discipline, e.g. Biology and Social sciences both).
+
+    Matches any `subj-group-type` that starts with "Discipline" — verified
+    against the real allofplos corpus, PLOS's current thesaurus tags these
+    groups `Discipline-v3`, while older articles use plain `Discipline`. The
+    other group types present (`heading` for "Research Article", nested inner
+    groups with no type) are correctly skipped.
     """
     subject: list[str] = []
     subject_level_1: list[str] = []
-    discipline_groups = tree.findall(".//article-categories/subj-group[@subj-group-type='Discipline']")
-    for group in discipline_groups:
+    cats = tree.find(".//article-categories")
+    if cats is None:
+        return subject, subject_level_1
+    for group in cats.findall("subj-group"):
+        group_type = group.get("subj-group-type") or ""
+        if not group_type.startswith("Discipline"):
+            continue
         top_subject = group.find("subject")
         if top_subject is not None and top_subject.text:
             top_text = top_subject.text.strip()

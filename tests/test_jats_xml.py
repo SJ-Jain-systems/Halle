@@ -1,9 +1,35 @@
 import datetime as dt
 import os
 
-from src.jats_xml import get_extraction_text, parse_metadata
+from src.jats_xml import get_extraction_text, get_subjects, parse_metadata, parse_tree
 
 FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "sample_article.xml")
+
+# Real-corpus taxonomy structure: PLOS's current thesaurus tags discipline
+# groups `Discipline-v3` (not `Discipline`), with a `heading` group for the
+# article type and deeply nested inner subj-groups carrying no type at all.
+# Verified against journal.pone.0320306.xml in the allofplos corpus.
+DISCIPLINE_V3_XML = """<?xml version="1.0"?>
+<article article-type="research-article">
+  <front><journal-meta><journal-title>PLOS ONE</journal-title></journal-meta>
+  <article-meta>
+    <article-id pub-id-type="doi">10.1371/journal.pone.0320306</article-id>
+    <article-categories>
+      <subj-group subj-group-type="heading"><subject>Research Article</subject></subj-group>
+      <subj-group subj-group-type="Discipline-v3">
+        <subject>Biology and life sciences</subject>
+        <subj-group><subject>Psychology</subject>
+          <subj-group><subject>Social psychology</subject></subj-group></subj-group>
+      </subj-group>
+      <subj-group subj-group-type="Discipline-v3">
+        <subject>Social sciences</subject>
+        <subj-group><subject>Psychology</subject>
+          <subj-group><subject>Social psychology</subject></subj-group></subj-group>
+      </subj-group>
+    </article-categories>
+  </article-meta></front>
+</article>
+"""
 
 
 def test_parse_metadata_basic_fields():
@@ -40,3 +66,14 @@ def test_get_extraction_text_prioritizes_methods_section():
 def test_get_extraction_text_does_not_duplicate_nested_sections():
     text = get_extraction_text(FIXTURE)
     assert text.count("45% male") == 1
+
+
+def test_get_subjects_reads_discipline_v3(tmp_path):
+    path = tmp_path / "v3.xml"
+    path.write_text(DISCIPLINE_V3_XML, encoding="utf-8")
+    subject, subject_level_1 = get_subjects(parse_tree(str(path)))
+    # `heading` (Research Article) must be skipped; both Discipline-v3 branches read.
+    assert subject_level_1 == ["Biology and life sciences", "Social sciences"]
+    assert "Social psychology" in subject
+    assert "Psychology" in subject
+    assert "Research Article" not in subject
