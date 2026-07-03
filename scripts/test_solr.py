@@ -1,7 +1,10 @@
 """Validate that PLOS Solr can enumerate psychology PLOS ONE research articles
-directly (the fix for the allofplos XML taxonomy gaps, esp. 2015). Prints the
-result count for a couple of years and a sample doc, so we can confirm the
-query shape before building the real Solr-based indexer.
+directly (the fix for the allofplos XML taxonomy gaps, esp. 2015).
+
+Uses Solr filter queries (fq), which are strictly ANDed — a plain space-
+separated q gets parsed loosely by PLOS's endpoint and returns ~everything.
+Prints, per year, the total research-article count vs the Psychology subset,
+so we can confirm the subject filter actually bites.
 
     python scripts/test_solr.py
 """
@@ -14,27 +17,30 @@ import requests
 SOLR_URL = "https://api.plos.org/search"
 
 
-def count_psych(year: int) -> dict:
-    q = (
-        'journal:"PLOS ONE" AND article_type:"Research Article" '
-        'AND subject:"Psychology" '
-        f"AND publication_date:[{year}-01-01T00:00:00Z TO {year}-12-31T23:59:59Z]"
-    )
-    params = {"q": q, "fl": "id,publication_date,subject", "wt": "json", "rows": 1}
+def query(year: int, with_psych: bool, rows: int = 1) -> dict:
+    fq = [
+        'journal:"PLOS ONE"',
+        'article_type:"Research Article"',
+        f"publication_date:[{year}-01-01T00:00:00Z TO {year}-12-31T23:59:59Z]",
+    ]
+    if with_psych:
+        fq.append('subject:"Psychology"')
+    params = {"q": "*:*", "fq": fq, "fl": "id,publication_date,subject", "wt": "json", "rows": rows}
     r = requests.get(SOLR_URL, params=params, timeout=30)
     r.raise_for_status()
     return r.json()["response"]
 
 
 def main() -> None:
+    print("year | total research articles | with subject:Psychology")
     for year in (2013, 2014, 2015, 2016, 2020):
-        resp = count_psych(year)
-        print(f"{year}: numFound = {resp['numFound']}")
-    # Show one full 2015 doc to confirm subject paths are present.
-    resp = count_psych(2015)
+        total = query(year, with_psych=False)["numFound"]
+        psych = query(year, with_psych=True)["numFound"]
+        print(f"  {year} | {total:6d} | {psych:6d}")
+    resp = query(2015, with_psych=True, rows=1)
     if resp["docs"]:
         print("\nsample 2015 psychology doc:")
-        print(json.dumps(resp["docs"][0], indent=2)[:1500])
+        print(json.dumps(resp["docs"][0], indent=2)[:1200])
 
 
 if __name__ == "__main__":
