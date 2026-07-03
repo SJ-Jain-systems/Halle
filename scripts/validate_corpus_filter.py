@@ -13,15 +13,21 @@ from __future__ import annotations
 import argparse
 import glob
 import os
+import sys
 from collections import Counter
 
-from src.build_corpus_index import (
+# Allow running as `python scripts/validate_corpus_filter.py` (which otherwise
+# puts scripts/ on sys.path, not the repo root) — add the repo root so `src`
+# is importable.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from src.build_corpus_index import (  # noqa: E402
     MAX_YEAR,
     MIN_YEAR,
     TARGET_ARTICLE_TYPE,
     TARGET_JOURNAL_SUBSTRING,
 )
-from src.jats_xml import parse_metadata
+from src.jats_xml import parse_metadata  # noqa: E402
 
 
 def main() -> None:
