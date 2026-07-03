@@ -1,0 +1,184 @@
+---
+title: "Demographic Reporting in PLOS ONE Psychology Articles"
+subtitle: "Project progress report — building the dataset"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    code-fold: false
+    theme: cosmo
+  pdf:
+    toc: true
+---
+
+## What this project is trying to answer
+
+We want to know how well psychology studies published in the journal *PLOS ONE*
+report the **demographics of the people they study** — the participants' gender,
+race, education, and socioeconomic status — and whether that reporting has
+**changed over time**, from 2010 through 2026.
+
+The bigger question behind this is representativeness: if researchers don't
+report who their participants are, we can't tell whether findings generalize
+beyond a narrow slice of the population. Tracking reporting habits year by year
+tells us whether the field is improving.
+
+To do this at scale, we can't read tens of thousands of papers by hand. So the
+plan is to have a large language model (an AI system) read each paper's methods
+section and pull out the demographic details into a spreadsheet we can analyze.
+
+We split the work into four time periods for comparison:
+
+| Stage | Years | Why |
+|-------|-------|-----|
+| Early | 2010–2014 | Baseline |
+| Middle | 2015–2019 | Pre-pandemic |
+| COVID | 2020–2023 | Pandemic era |
+| Post-COVID | 2024–2026 | Recovery |
+
+## How the pipeline works, in plain terms
+
+Think of it as an assembly line. Each stage hands its output to the next:
+
+```
+Find the psychology papers  →  Pick a small test batch  →  Have the AI read them
+        (done)                       (done)                    (next step)
+        →  Check the AI's accuracy  →  Run it on all ~55,000 papers  →  Analyze trends
+```
+
+We are currently at the end of stage two: we have the full list of papers and a
+small pilot batch ready for the AI to test on.
+
+## Three decisions we had to make up front
+
+**1. Where do we get the papers?** PLOS publishes all its articles, and there
+are two ways in: download every article as a file (a project called
+*allofplos*), or query PLOS's search engine (called *Solr*). We ended up using
+**both** — the search engine to *find* the right papers, and the downloaded
+files to *read* their full text. (More on why below — this took some
+detective work.)
+
+**2. How do we pick a test batch?** Before trusting the AI on 55,000 papers, we
+test it on a handful and check its work by hand. We pick **2 papers from each
+psychology subfield** so the test covers the whole range of topics, not just the
+most common ones.
+
+**3. Which AI model?** We chose **Llama 3.3 (70B)** — a large, accurate
+open model — over a smaller, cheaper alternative. Because we're running on the
+university's supercomputer (Rivanna), the cost of the bigger model isn't a
+concern, and accuracy matters most: a missed or made-up demographic number would
+distort the whole analysis.
+
+## Getting the data: a detour worth documenting
+
+This is where the project got interesting. Our first plan was to download every
+PLOS article and read each one's built-in subject labels to find the psychology
+papers. Every article is tagged by PLOS with topics like
+"Biology → Psychology → Social psychology."
+
+We wrote code to read those tags:
+
+```python
+# Simplified: find the psychology subfield an article is tagged with
+def get_psychology_subfields(article):
+    # PLOS nests tags like:  Psychology > Social psychology
+    # We grab the specific subfield sitting under "Psychology"
+    ...
+    return subfields   # e.g. ["Social psychology"]
+```
+
+When we ran this across all 391,000 downloaded articles, it worked — but a
+routine sanity check turned up something odd. Counting the psychology papers we
+found per year:
+
+```
+2014: 2,002 papers
+2015:    12 papers   ← almost nothing?!
+2016: 2,100 papers
+```
+
+**The year 2015 had almost no psychology papers.** That's not believable — 2015
+was a normal year. Something was wrong.
+
+Digging in, we found the cause: for about **99% of 2015 articles, the downloaded
+files simply don't contain the subject tags at all**. PLOS applied those tags on
+their website but never embedded them in the files for that period. No amount of
+clever code can read a label that isn't there. Losing 2015 would have gutted our
+"Middle" time period.
+
+The fix: PLOS's **search engine does have the tags for every article**, even the
+ones missing from the files. So we switched to asking PLOS's search engine
+directly: "give me every PLOS ONE psychology research article from 2010 to
+2026." One important lesson learned — the query needs a specific setting
+(`doc_type:full`) or it returns millions of irrelevant fragments:
+
+```bash
+# Ask PLOS's search engine for 2015 psychology papers
+curl 'https://api.plos.org/search?q=*:*&fq=doc_type:full&fq=journal:"PLOS ONE"
+      &fq=article_type:"Research Article"&fq=subject:"Psychology"
+      &fq=publication_date:[2015-01-01T00:00:00Z TO 2015-12-31T23:59:59Z]'
+```
+
+That query returned **4,346 psychology papers for 2015** — the year that had
+looked empty. Problem solved, and we still use the downloaded files for the one
+thing they're reliable for: the full text the AI needs to read.
+
+## The finished article list
+
+After switching to the search engine, the numbers look healthy across every
+year — no gaps:
+
+```python
+total: 58,467 psychology articles
+by year:
+  2010:  853   2014: 4,249   2018: 3,492   2022: 3,761
+  2011: 1,886  2015: 4,346   2019: 3,219   2023: 3,761
+  2012: 2,481  2016: 3,663   2020: 3,548   2024: 4,249
+  2013: 4,478  2017: 3,367   2021: 3,714   2025: 5,009
+by stage:
+  early: 13,947   middle: 18,087   covid: 14,784   post-covid: 11,649
+```
+
+(2010 is genuinely smaller because PLOS ONE was younger then — that's a real
+trend, not an error.) About 6% of these are very recent papers we don't yet have
+the full text for, so those are set aside for the reading step.
+
+## The pilot test batch
+
+Finally, we drew the small batch to test the AI on. We take 2 papers from each
+psychology subfield PLOS uses, chosen at random but with a fixed "seed" so the
+selection is reproducible — anyone re-running it gets the exact same 46 papers:
+
+```bash
+python -m src.sample_articles --index data/corpus_index.csv \
+                              --out data/sampled_articles.csv
+```
+
+Result: **46 papers spanning 23 subfields** — Social psychology, Cognitive
+psychology, Developmental psychology, Personality, Emotions, Psychometrics, and
+more. This is the batch we'll use to check the AI's accuracy before committing to
+all 55,000.
+
+## What happens next
+
+1. **Run the pilot** — have Llama 3.3 read the 46 test papers and extract their
+   demographic details.
+2. **Check its work by hand** against a scoring guide (did it catch every
+   reported group? Are the percentages right?).
+3. **Run the full extraction** on all ~55,000 papers (split across the
+   supercomputer's GPUs).
+4. **Analyze the trends** — reporting rates for gender, race, education, and
+   socioeconomic status, year by year and across the four time periods. This is
+   the answer to the original question.
+
+## Where the code and details live
+
+Everything is version-controlled on GitHub (repository: *SJ-Jain-systems/Halle*).
+Key documents for the curious:
+
+- `docs/DECISIONS.md` — the three decisions above, with the full reasoning
+- `docs/RUNNING_ON_RIVANNA.md` — step-by-step instructions to run the whole
+  pipeline on the university supercomputer
+- `docs/SCORING_RUBRIC.md` — how we'll grade the AI's accuracy on the pilot
+- `src/` — the actual code for each stage
