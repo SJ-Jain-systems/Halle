@@ -39,8 +39,6 @@ def main() -> None:
 
     years: Counter = Counter()
     undated = 0
-    examples_2015: list[str] = []
-    examples_2016: list[str] = []
     for f in sample:
         try:
             tree = parse_tree(f)
