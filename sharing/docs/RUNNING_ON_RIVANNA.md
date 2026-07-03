@@ -94,7 +94,7 @@ python -m src.sample_articles --index data/corpus_index.csv --out data/sampled_a
 Writes 2 papers per subfield. With 23 subfields that is 46 papers. Same batch
 every time unless you change `--seed`.
 
-## Step 4: run the pilot on a GPU
+## Step 4: run the pilot on a GPU (I HAVE ONLY GOTTEN THIS FAR WITHOUT TROUBLESHOOTING)
 
 Llama-3.3-70B is gated on Hugging Face. Accept Meta's license on the model page
 first, then make a read token. On the login node:
