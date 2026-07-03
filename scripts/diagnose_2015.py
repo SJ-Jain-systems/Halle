@@ -40,8 +40,11 @@ def main() -> None:
     sample = files[::step]
     print(f"sampling {len(sample)} of {len(files)} PLOS ONE files")
 
-    per_year = defaultdict(lambda: {"n": 0, "psych_node": 0, "psych_substr": 0})
-    failing_2015 = []
+    from collections import Counter
+
+    per_year = defaultdict(lambda: {"n": 0, "psych_node": 0, "psych_substr": 0, "empty_subj": 0})
+    dumps_2015 = []
+    sgtype_2015: Counter = Counter()
     for f in sample:
         try:
             tree = parse_tree(f)
@@ -52,27 +55,34 @@ def main() -> None:
             continue
         subj, _ = get_subjects(tree)
         node_sf = get_psychology_subfields(tree)
-        has_node = bool(node_sf)
-        has_substr = any("psycholog" in s.lower() for s in subj)
         rec = per_year[d.year]
         rec["n"] += 1
-        rec["psych_node"] += has_node
-        rec["psych_substr"] += has_substr
-        if d.year == 2015 and has_substr and not has_node and len(failing_2015) < 3:
+        rec["psych_node"] += bool(node_sf)
+        rec["psych_substr"] += any("psycholog" in s.lower() for s in subj)
+        rec["empty_subj"] += not subj
+        if d.year == 2015:
             cats = tree.find(".//article-categories")
-            failing_2015.append(
-                (os.path.basename(f), etree.tostring(cats, pretty_print=True).decode()[:2500])
-            )
+            if cats is not None:
+                for sg in cats.findall(".//subj-group"):
+                    sgtype_2015[sg.get("subj-group-type")] += 1
+            if len(dumps_2015) < 3:
+                raw = etree.tostring(cats).decode()[:2000] if cats is not None else "<no article-categories>"
+                dumps_2015.append((os.path.basename(f), raw))
 
-    print("year | total | psych_by_node | psych_by_substring")
+    print("year | total | psych_by_node | psych_by_substring | empty_subject_list")
     for y in sorted(per_year):
         r = per_year[y]
-        print(f"  {y} | {r['n']:4d} | {r['psych_node']:4d} | {r['psych_substr']:4d}")
+        print(f"  {y} | {r['n']:4d} | {r['psych_node']:4d} | {r['psych_substr']:4d} | {r['empty_subj']:4d}")
 
-    print("\n--- failing 2015 articles (substring says psychology, node detection missed) ---")
-    for name, cats in failing_2015:
+    print("\n--- subj-group-type values seen in 2015 articles ---")
+    for k, v in sgtype_2015.most_common():
+        print(f"   {v:5d}  {k!r}")
+
+    print("\n--- raw article-categories of first 3 sampled 2015 articles ---")
+    for name, raw in dumps_2015:
         print(f"=== {name} ===")
-        print(cats)
+        print(raw)
+        print()
 
 
 if __name__ == "__main__":
