@@ -2,7 +2,7 @@
 
 For a corpus sample, buckets by year and counts, per year: total articles,
 those our get_psychology_subfields() flags as psychology, and those whose raw
-subject terms merely *contain* "psycholog". A year where the second count is
+subject terms merely *contain* "psych". A year where the second count is
 healthy but the first is ~0 is where our structural detection is failing.
 Then dumps the raw <article-categories> of a few such failing 2015 articles
 so the structural difference is visible.
@@ -58,7 +58,7 @@ def main() -> None:
         rec = per_year[d.year]
         rec["n"] += 1
         rec["psych_node"] += bool(node_sf)
-        rec["psych_substr"] += any("psycholog" in s.lower() for s in subj)
+        rec["psych_substr"] += any("psych" in s.lower() for s in subj)
         rec["empty_subj"] += not subj
         if d.year == 2015:
             cats = tree.find(".//article-categories")
