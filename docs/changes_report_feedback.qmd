@@ -1,0 +1,165 @@
+---
+title: "Changes: report feedback and pilot ground-truth tooling"
+subtitle: "What changed and why"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    theme: cosmo
+  pdf:
+    toc: true
+    number-sections: true
+---
+
+# Overview
+
+Three review notes on the progress report (`docs/project_report.qmd`) and the
+pilot QA workflow were addressed in one change set. Two are documentation fixes
+to the report; the third adds the missing tooling to produce and score a
+ground-truth ("gold") answer for the pilot. None of the changes alter what the
+pipeline classifies or what data it collects.
+
+| # | Item | Kind | Files |
+|---|------|------|-------|
+| 1 | Trim the redundant breakdown in section 8 | Report prose | `docs/project_report.qmd`, `sharing/project_report.qmd` |
+| 2 | Broaden the 2015 diagnostic substring `psycholog` → `psych` | Diagnostic + prose | `scripts/diagnose_2015.py`, both report copies |
+| 3 | Ground-truth template + scoring script | New tooling | `src/make_gold_template.py`, `src/score_pilot.py`, `docs/SCORING_RUBRIC.md`, tests |
+
+# Item 1 — Trim the redundant breakdown in section 8
+
+## The problem
+
+Section 2 of the report ("The extraction schema") is the authoritative definition
+of the coding schema — for each demographic it states whether it is reported and
+its percentage breakdown (gender: male / female / other; race: white / black /
+hispanic / asian / other; education: college vs. not; SES: an ordinal 0/1/2).
+
+Section 8 ("Extraction mechanics") quotes the model prompt, and in doing so it
+re-listed the *same* per-subgroup breakdowns. The category lists were therefore
+stated twice in the narrative — once as the schema and once inside the prompt
+block — which is redundant prose.
+
+## The change
+
+The quoted prompt in section 8 now names the four demographics and refers to the
+schema in section 2 rather than re-enumerating every subgroup:
+
+```text
+You are coding a psychology research article ... For EACH distinct participant
+sample, code the four demographics defined by the schema above (gender, race,
+education, socioeconomic status) — for each, whether it was reported and, where
+reported, its composition.
+```
+
+The section's unique content — the two safeguards (schema validation and
+methods-first reordering) — is untouched.
+
+## Why it is safe
+
+This is a prose edit only. The percentages themselves remain part of the schema
+and are still collected and used downstream: `analyze_trends.py::mean_subgroup_pct`
+computes the mean of each subgroup percentage (e.g. mean % female) among reporting
+samples. Nothing about the extraction or the analysis changed. The edit was
+applied identically to both the `docs/` report and the curated `sharing/` copy.
+
+# Item 2 — Broaden the diagnostic substring `psycholog` → `psych`
+
+## Context
+
+During corpus construction, a diagnostic (`scripts/diagnose_2015.py`) tabulated,
+per year, how many articles the structural parser tagged as psychology versus how
+many merely *contained* the substring `"psycholog"` in their raw subject terms.
+This is what isolated the 2015 discontinuity (articles distributed with no subject
+taxonomy at all).
+
+## The change
+
+The `contains` count was broadened from `"psycholog"` to `"psych"`:
+
+```python
+# scripts/diagnose_2015.py
+rec["psych_substr"] += any("psych" in s.lower() for s in subj)
+```
+
+The report narrative and the diagnostic table that quote this substring were
+updated to match, in both report copies.
+
+## Scope and why it is safe
+
+This changes a **diagnostic count only**. Real inclusion into the corpus is an
+*exact* match on the taxonomy node `"Psychology"`
+(`src/jats_xml.py`, `src/solr_client.py`) — never a substring match — so widening
+the diagnostic to `"psych"` does not change which articles the pipeline treats as
+psychology.
+
+Broadening the substring can only *raise* the neighbouring-year counts slightly
+(it now also catches terms such as *Psychometrics* or *Psychophysics*), while
+2015 remains near-zero, so the decisive contrast the report draws is unchanged.
+The illustrative counts in the table are left as originally observed and noted as
+such; anyone wanting exact re-counts can re-run the diagnostic.
+
+# Item 3 — Ground-truth template and scoring script
+
+## The gap
+
+The scoring rubric (`docs/SCORING_RUBRIC.md`) assumed a human-coded "gold" answer
+existed for the pilot, but there was no way to *produce* one and nothing to
+*score* the model against it. This is the pipeline's next milestone: adjudicating
+the model's pilot accuracy by hand before committing GPU time to the full run.
+
+## What was added
+
+**`src/make_gold_template.py`** — generates a blank hand-coding CSV, one row per
+pilot article, with the exact schema the model emits
+(`extract_demographics.REQUIRED_KEYS`). The unit of analysis is the *sample*, so a
+coder duplicates a row and bumps `sample_id` for each additional participant
+sample. An optional `--text-dir` dumps each article's methods-first extraction
+text — exactly what the model reads — so the coder works from the same source.
+
+```bash
+python -m src.make_gold_template \
+    --sample data/sampled_articles.csv \
+    --out data/pilot_gold_template.csv \
+    --text-dir data/pilot_text
+```
+
+**`src/score_pilot.py`** — scores `run_pilot.py`'s per-article JSON output against
+the completed gold CSV, aligned by `(doi, sample_id)`, and reports per-field
+agreement mapped to the rubric's four axes:
+
+- **Coverage** — do the `*_reported` flags match?
+- **Numeric accuracy** — do the reported `*_pct` breakdowns agree (within a
+  percentage-point tolerance)?
+- **Multi-sample handling** — one gold row per sample, matched by the model?
+- **Schema adherence** — do model rows carry exactly the required keys?
+
+```bash
+python -m src.score_pilot --gold data/pilot_gold.csv --out results/pilot_accuracy.csv
+```
+
+Output is a per-article CSV (`results/pilot_accuracy.csv`) plus an aggregate
+summary.
+
+**`docs/SCORING_RUBRIC.md`** — gained a "Producing the gold set" section wiring the
+two tools together, and the stale "10-article" wording was corrected (the realized
+pilot is 46 = 2 per subfield across the 23 subfields the index contains).
+
+## Reuse
+
+The tooling deliberately reuses existing definitions rather than duplicating them:
+`extract_demographics.REQUIRED_KEYS` (schema), `sample_articles.py` output
+(article list), `jats_xml.get_extraction_text` (the text the model sees), and
+`run_pilot.py`'s `results/<model_id>/<doi>.json` output layout.
+
+# Verification
+
+- **Tests** — `pytest` passes 42 tests (33 pre-existing + 9 new in
+  `tests/test_make_gold_template.py` and `tests/test_score_pilot.py`), fully
+  offline (fixture XML + a fake model client; no GPU or network).
+- **End-to-end** — both new tools were run against the repository fixtures: the
+  template generates with the correct schema columns and dumps extraction text,
+  and scoring a matching model output reports 1.0 on all four axes.
+- **Consistency** — no `"psycholog"` substring literal remains in code or reports,
+  and section 8 no longer re-lists the subgroup breakdowns.
