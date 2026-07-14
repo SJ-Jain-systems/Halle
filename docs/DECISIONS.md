@@ -100,7 +100,7 @@ allocation, no per-token API cost, no rate limits) removes that constraint
 entirely — there's no real tradeoff left to weigh, so there's no reason to
 keep Mistral in the loop as a second candidate.
 
-`src/run_pilot.py` (`slurm/run_pilot.slurm`) still runs the 10-article pilot
+`src/run_pilot.py` (`slurm/run_pilot.slurm`) still runs the 46-article pilot
 through Llama-3.3-70B-Instruct before the full corpus run — not to compare
 it against anything, but as a QA spot-check (`docs/SCORING_RUBRIC.md`) that
 extraction quality looks right across the psychology subfields before spending real

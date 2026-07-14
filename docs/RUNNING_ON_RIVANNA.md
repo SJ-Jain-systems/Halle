@@ -26,7 +26,7 @@ allofplos corpus (local XML mirror)
 data/corpus_index.csv           ← full filtered population (brief item 3)
         │  src/sample_articles.py
         ▼
-data/sampled_articles.csv       ← 10-article pilot
+data/sampled_articles.csv       ← 46-article pilot
         │  src/run_pilot.py     (Llama-3.3-70B-Instruct, docs/DECISIONS.md #3)
         ▼
 results/<model>/<doi>.json      ← QA spot-check against docs/SCORING_RUBRIC.md
@@ -182,7 +182,7 @@ Writes `results/meta-llama__Llama-3.3-70B-Instruct/<doi>.json` for all 10
 pilot articles. This isn't a model comparison — the model choice is settled
 (`docs/DECISIONS.md` #3) — it's a QA spot-check: score the output against
 `docs/SCORING_RUBRIC.md` (coverage, numeric accuracy, schema adherence,
-multi-sample handling) to catch a bad prompt or a parsing bug on 10 articles
+multi-sample handling) to catch a bad prompt or a parsing bug on 46 articles
 rather than after burning GPU hours on the full corpus.
 
 **If Llama-3.3-70B-Instruct doesn't fit your GPU allocation** (needs

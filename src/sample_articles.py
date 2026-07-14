@@ -1,4 +1,4 @@
-"""Draw the 10-article pilot sample (docs/DECISIONS.md #2) from the local
+"""Draw the 46-article pilot sample (docs/DECISIONS.md #2) from the local
 corpus index built by src/build_corpus_index.py. No network calls.
 
 Usage:

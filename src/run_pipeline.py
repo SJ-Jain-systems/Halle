@@ -1,6 +1,6 @@
 """Full-scale demographic extraction over the entire filtered corpus
 (brief items 1-2: this is what actually answers the research question, as
-opposed to src/run_pilot.py which only covers the 10-article pilot).
+opposed to src/run_pilot.py which only covers the 46-article pilot).
 
 Reads data/corpus_index.csv (src/build_corpus_index.py), runs every article
 through the single chosen model (docs/DECISIONS.md #3,
