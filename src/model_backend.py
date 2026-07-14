@@ -3,7 +3,7 @@ constraint — no hosted API, no rate limits. Both implement the ModelClient
 interface from src/extract_demographics.py (a `.generate(prompt) -> str`
 method), so either drops straight into extract_demographics()/run_pilot.py/run_pipeline.py.
 
-vLLM is the recommended path for anything beyond the 10-article pilot: it
+vLLM is the recommended path for anything beyond the 46-article pilot: it
 batches requests and uses paged attention, which matters once you're running
 the full filtered corpus. The transformers backend is a simpler fallback for
 small allocations or debugging on a single GPU.
@@ -67,7 +67,7 @@ class TransformersModelClient:
     """Simpler single-process fallback via Hugging Face `transformers`.
 
     Loads the model once per process with device_map="auto" (splits across
-    all visible GPUs automatically). Fine for the 10-article pilot; for a
+    all visible GPUs automatically). Fine for the 46-article pilot; for a
     full-corpus run prefer VLLMModelClient's batching.
     """
 

@@ -11,13 +11,13 @@ Source brief: see the three open decisions and their reasoning in
 1. **Data access** — `allofplos` only (github.com/PLOS/allofplos). The whole
    corpus is synced locally once; every filter (subfield, article type,
    date) and every full-text read after that is a local scan, no network.
-2. **Pilot sample** — 10 articles, stratified 2 per psychology subfield
+2. **Pilot sample** — 46 articles, stratified 2 per psychology subfield
    (all subfields PLOS tags — social, cognitive, clinical, developmental,
    experimental psychology, psychometrics, ...), fixed random
    seed for reproducibility.
 3. **Model** — `meta-llama/Llama-3.3-70B-Instruct`, run locally on Rivanna
    GPU nodes. Final choice, on accuracy grounds — see
-   [`docs/DECISIONS.md`](docs/DECISIONS.md) #3. The 10-article pilot still
+   [`docs/DECISIONS.md`](docs/DECISIONS.md) #3. The 46-article pilot still
    runs through it as a QA spot-check
    ([`docs/SCORING_RUBRIC.md`](docs/SCORING_RUBRIC.md)) before the full run,
    not as a model comparison.
@@ -45,7 +45,7 @@ src/
   allofplos_client.py      local corpus directory access — no network calls
   subfields.py             time-stage buckets (subfields are taxonomy-driven, not hardcoded)
   build_corpus_index.py    scans the corpus, applies inclusion criteria, writes data/corpus_index.csv
-  sample_articles.py       draws the 10-article stratified pilot sample
+  sample_articles.py       draws the 46-article stratified pilot sample
   extract_demographics.py  prompt + schema + validation for demographic rows
   model_backend.py         local GPU inference (vLLM / transformers) for Rivanna
   run_pilot.py             runs the pilot sample through the chosen model for a QA spot-check
@@ -72,7 +72,7 @@ pip install -r requirements.txt
 # 2. Build the filtered population index
 python -m src.build_corpus_index --out data/corpus_index.csv
 
-# 3. Draw the 10-article pilot sample
+# 3. Draw the 46-article pilot sample
 python -m src.sample_articles --index data/corpus_index.csv --out data/sampled_articles.csv
 
 # 4. QA the chosen model on the pilot before scaling up

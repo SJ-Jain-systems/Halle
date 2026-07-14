@@ -1,4 +1,4 @@
-"""Run the 10-article pilot through the chosen model (docs/DECISIONS.md #3:
+"""Run the 46-article pilot through the chosen model (docs/DECISIONS.md #3:
 meta-llama/Llama-3.3-70B-Instruct) and save output for a QA spot-check
 against docs/SCORING_RUBRIC.md before committing to a full-corpus run.
 
