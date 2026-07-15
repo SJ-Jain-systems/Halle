@@ -8,9 +8,9 @@ by default, pulled from config.yaml), and appends one row per extracted sample t
 an output CSV.
 
 It's built to run as a SLURM array job (slurm/run_pipeline.slurm): pass
---shard-index/--shard-count so each array task chews through its own slice of the
-index. Safe to re-run, since articles already in the output CSV get skipped, so a
-killed or preempted job just picks up where it left off.
+--shard-index/--shard-count so each array task processes its own slice of the
+index. Safe to re-run, since articles already in the output CSV are skipped, so a
+killed or preempted job just resumes where it left off.
 
 Usage:
     python -m src.run_pipeline --index data/corpus_index.csv \\
@@ -102,9 +102,9 @@ def run(
                 continue
 
             for sample in samples:
-                # Turn the dict fields into JSON text so they survive a round-trip
-                # through CSV. Otherwise csv.writer falls back to Python's repr()
-                # and json.loads() can't read it back.
+                # Serialize the dict fields to JSON text so they survive a
+                # round-trip through CSV. Otherwise csv.writer falls back to
+                # Python's repr(), which json.loads() can't read back.
                 sample = {
                     **sample,
                     "gender_pct": json.dumps(sample.get("gender_pct") or {}),

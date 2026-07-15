@@ -1,10 +1,10 @@
-"""Figure out why our psychology detection whiffs on 2015 articles in particular.
+"""Investigate why our psychology detection misses 2015 articles in particular.
 
 Take a sample of the corpus, bucket it by year, and for each year count three
 things: how many articles there are total, how many our get_psychology_subfields()
 tags as psychology, and how many just have "psych" somewhere in their raw subject
 terms. A year where that last count looks fine but the tagged count is basically
-0 is a year where our structural detection is broken. Then it dumps the raw
+0 is a year where our structural detection is failing. Then it dumps the raw
 <article-categories> from a few of those 2015 articles so you can see what's
 different about them.
 

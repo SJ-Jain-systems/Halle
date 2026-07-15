@@ -29,8 +29,8 @@ def _valid_row(doi):
 
 
 class CountingClient:
-    """Pulls the DOI out of the prompt and echoes back a valid row. Keeps a list
-    of every generate() call, and can be told to blow up for certain DOIs."""
+    """Reads the DOI out of the prompt and returns a valid row. Records every
+    generate() call, and can be told to raise for certain DOIs."""
 
     def __init__(self, model_id, raise_for=()):
         self.model_id = model_id
@@ -140,8 +140,8 @@ def test_generic_error_is_recorded_and_run_continues(tmp_path):
     _write_sample_csv(sample_csv, dois=[d1, d2])
     results_dir = tmp_path / "results"
 
-    # d1 blows up with a non-validation error. The run should keep going and
-    # still do d2.
+    # d1 raises a non-validation error. The run should keep going and still
+    # process d2.
     client = CountingClient(MODEL, raise_for=[d1])
     run_pilot(str(sample_csv), MODEL, client_factory=lambda m: client, results_dir=str(results_dir))
 
