@@ -1,6 +1,6 @@
 """Run the 46-article pilot through our model (docs/DECISIONS.md #3,
-meta-llama/Llama-3.3-70B-Instruct) and save the output so we can eyeball it
-against docs/SCORING_RUBRIC.md before kicking off the full run.
+meta-llama/Llama-3.3-70B-Instruct) and save the output so we can review it
+against docs/SCORING_RUBRIC.md before starting the full run.
 
 Usage (on a Rivanna GPU node, see docs/RUNNING_ON_RIVANNA.md):
     python -m src.run_pilot --sample data/sampled_articles.csv --backend vllm
@@ -31,7 +31,7 @@ def load_sample(csv_path: str) -> list[dict]:
 
 def _existing_status(out_path: str) -> str | None:
     """Return the status of a result file we already wrote, or None if there
-    isn't one to read yet. This is what lets us pick back up after a job gets
+    isn't one to read yet. This is what lets us resume after a job is
     preempted."""
     if not os.path.exists(out_path):
         return None
@@ -49,16 +49,16 @@ def run_pilot(
     results_dir: str = "results",
     overwrite: bool = False,
 ) -> None:
-    """client_factory(model_id) hands back something with a .generate(prompt)
-    method. We pass it in so tests can swap in a fake model instead of loading a
-    real one (see tests/test_run_pilot.py).
+    """client_factory(model_id) returns something with a .generate(prompt)
+    method. We pass it in so tests can substitute a fake model instead of loading
+    a real one (see tests/test_run_pilot.py).
 
     Like src/run_pipeline.py, this is safe to re-run. If an article's result file
     already says status "ok" we skip it (unless overwrite is set), and if one
-    article blows up we write a status "error" result and keep going instead of
-    taking down the whole run. The model client only gets built the first time we
-    actually need to generate something, so a run that's fully resumed never
-    loads the model at all.
+    article raises an error we write a status "error" result and keep going
+    instead of aborting the whole run. The model client is built only the first
+    time we actually need to generate something, so a run that's fully resumed
+    never loads the model at all.
     """
     articles = load_sample(sample_csv)
     model_dir = os.path.join(results_dir, model_id.replace("/", "__"))
@@ -89,7 +89,7 @@ def run_pilot(
             logger.warning("Extraction failed for %s: %s", doi, exc)
             result = {"doi": doi, "model": model_id, "status": "error", "error": str(exc)}
             counts["error"] += 1
-        except Exception as exc:  # one bad article shouldn't take down the whole run
+        except Exception as exc:  # one bad article shouldn't abort the whole run
             logger.exception("Unexpected error extracting %s", doi)
             result = {"doi": doi, "model": model_id, "status": "error", "error": repr(exc)}
             counts["error"] += 1
@@ -112,7 +112,7 @@ def main() -> None:
     parser.add_argument(
         "--backend", default="vllm", choices=["vllm", "transformers", "echo"],
         help="'echo' loads no model. It's a GPU-free dry-run to check the wiring "
-             "(read the CSV, read the XML, build the prompt, write the JSON) before you grab GPUs.",
+             "(read the CSV, read the XML, build the prompt, write the JSON) before you request GPUs.",
     )
     parser.add_argument("--tensor-parallel-size", type=int, default=1)
     parser.add_argument("--model", default=None, help="Override config.yaml's default_model")

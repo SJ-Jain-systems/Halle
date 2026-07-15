@@ -2,8 +2,8 @@
 (see docs/SCORING_RUBRIC.md).
 
 It reads the filled-in gold CSV (from src/make_gold_template.py) and the model's
-per-article JSON from src/run_pilot.py (results/<model_id>/<doi>.json), lines the
-rows up by (doi, sample_id), and reports how well they agree on the rubric's four
+per-article JSON from src/run_pilot.py (results/<model_id>/<doi>.json), aligns the
+rows by (doi, sample_id), and reports how well they agree on the rubric's four
 axes:
 
   Coverage / reporting flags : do the gold *_reported flags match the model's?
@@ -107,7 +107,7 @@ def _by_sample(rows: list[dict]) -> dict[int, dict]:
 
 
 def score(gold_rows: list[dict], model_outputs: dict[str, dict], tol: float = 1.0):
-    """Score the model against the gold rows, matched up by (doi, sample_id).
+    """Score the model against the gold rows, matched by (doi, sample_id).
 
     Returns (per_doi_records, summary). The gold set is what we're scoring
     against, so an article that's in the gold but has no model output counts as a
@@ -240,7 +240,7 @@ def main() -> None:
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--model", default=None, help="Override config.yaml's default_model")
     parser.add_argument("--out", default="results/pilot_accuracy.csv")
-    parser.add_argument("--tol", type=float, default=1.0, help="How many percentage points of slack to allow")
+    parser.add_argument("--tol", type=float, default=1.0, help="Allowed tolerance in percentage points")
     args = parser.parse_args()
 
     if args.model:

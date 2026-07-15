@@ -58,10 +58,10 @@ def stratified_sample(
     unit-test with fixture rows (tests/test_sample_articles.py).
 
     If `subfields` is None (the default the CLI uses), we take the subfields from
-    whatever the index actually has, and skip any subfield with fewer than
+    whatever the index actually contains, and skip any subfield with fewer than
     `per_subfield` articles (with a warning). That way the pilot covers all the
-    psychology subfields PLOS uses without us hardcoding a list. If you pass
-    `subfields` in yourself, a subfield that's short on candidates is an error
+    psychology subfields PLOS uses without hardcoding a list. If you pass
+    `subfields` explicitly, a subfield that's short on candidates is an error
     instead.
     """
     rng = random.Random(seed)

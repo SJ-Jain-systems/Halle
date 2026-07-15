@@ -1,19 +1,18 @@
 """Model backends for running inference locally on Rivanna, where GPUs are the
-whole point (no hosted API, no rate limits). They all implement the same little
+point (no hosted API, no rate limits). They all implement the same small
 ModelClient interface from src/extract_demographics.py (a .generate(prompt)
 method that returns a string), so any of them slots straight into
 extract_demographics()/run_pilot.py/run_pipeline.py.
 
 Use vLLM for anything past the 46-article pilot: it batches requests and uses
-paged attention, which starts to matter once you're chewing through the whole
-corpus. The transformers backend is a simpler fallback for small allocations or
-poking at things on a single GPU. The echo backend doesn't load a model at all;
-it's a GPU-free dry-run for checking the plumbing before you grab a GPU
-allocation (see EchoModelClient).
+paged attention, which starts to matter once you're processing the whole corpus.
+The transformers backend is a simpler fallback for small allocations or debugging
+on a single GPU. The echo backend loads no model at all; it's a GPU-free dry-run
+for checking the wiring before you request a GPU allocation (see EchoModelClient).
 
-Heads up: none of the GPU backends have actually run in this sandbox (no GPU, no
-weights, no network to huggingface.co), so check docs/RUNNING_ON_RIVANNA.md for
-how to try them on a real Rivanna node before you trust the output.
+Note: none of the GPU backends have run in this sandbox (no GPU, no weights, no
+network to huggingface.co), so see docs/RUNNING_ON_RIVANNA.md for how to validate
+them on a real Rivanna node before trusting the output.
 """
 from __future__ import annotations
 
@@ -61,8 +60,8 @@ class VLLMModelClient:
         llm = self._load()
         params = SamplingParams(temperature=self.temperature, max_tokens=self.max_new_tokens)
         outputs = llm.generate(prompts, params)
-        # vLLM doesn't promise the outputs come back in the order we sent them,
-        # so sort by the request index it tacks on.
+        # vLLM doesn't guarantee the outputs come back in the order we sent them,
+        # so sort by the request index it attaches.
         outputs = sorted(outputs, key=lambda o: o.request_id)
         return [o.outputs[0].text for o in outputs]
 
@@ -114,11 +113,11 @@ _DOI_IN_PROMPT = re.compile(r"Article DOI:\s*(\S+)")
 class EchoModelClient:
     """GPU-free dry-run backend: no model, no network.
 
-    It just hands back a schema-valid "nothing reported" answer for whatever DOI
-    is in the prompt (extract_demographics.EXTRACTION_PROMPT_TEMPLATE writes an
-    "Article DOI: <doi>" line). That's enough to run the whole path (read the
-    CSV, read the XML, build the prompt, parse and validate, write the JSON) on
-    the login node before you ask for GPUs. It's a plumbing check, not a real
+    It returns a schema-valid "nothing reported" answer for whatever DOI is in the
+    prompt (extract_demographics.EXTRACTION_PROMPT_TEMPLATE writes an
+    "Article DOI: <doi>" line). That's enough to run the whole path (read the CSV,
+    read the XML, build the prompt, parse and validate, write the JSON) on the
+    login node before you request GPUs. It's a wiring check, not a real
     extraction.
     """
 

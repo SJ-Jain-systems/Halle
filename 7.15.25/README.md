@@ -1,31 +1,29 @@
 # Halle
 
-A pipeline for looking at how well *PLOS ONE* psychology articles report who was
-actually in their samples (gender, race, education, socioeconomic status), from
-2010 to 2026, broken down year by year and by stage (early, middle, COVID,
-post-COVID).
+A pipeline for measuring how well *PLOS ONE* psychology articles report who was
+in their samples (gender, race, education, socioeconomic status), from 2010 to
+2026, broken down year by year and by stage (early, middle, COVID, post-COVID).
 
-The three big decisions and the reasoning behind them live in
+The three main decisions and the reasoning behind them are in
 [`docs/DECISIONS.md`](docs/DECISIONS.md):
 
-1. **Data access.** Just `allofplos` (github.com/PLOS/allofplos). We sync the
-   whole corpus locally once, and after that every filter (subfield, article
-   type, date) and every full-text read is a local scan with no network.
-2. **Pilot sample.** 46 articles, 2 per psychology subfield (across every
-   subfield PLOS tags: social, cognitive, clinical, developmental, experimental
-   psychology, psychometrics, and so on), with a fixed random seed so it's
-   reproducible.
+1. **Data access.** Use `allofplos` (github.com/PLOS/allofplos). We sync the whole
+   corpus locally once; after that, every filter (subfield, article type, date)
+   and every full-text read is a local scan with no network access.
+2. **Pilot sample.** 46 articles, 2 per psychology subfield, across every subfield
+   PLOS tags (social, cognitive, clinical, developmental, experimental
+   psychology, psychometrics, and the rest), drawn with a fixed random seed so
+   it's reproducible.
 3. **Model.** `meta-llama/Llama-3.3-70B-Instruct`, run locally on Rivanna GPU
-   nodes. We picked it on accuracy grounds (see
-   [`docs/DECISIONS.md`](docs/DECISIONS.md) #3). The 46-article pilot still runs
-   through it as a QA spot-check ([`docs/SCORING_RUBRIC.md`](docs/SCORING_RUBRIC.md))
-   before the full run. It's not a model comparison.
+   nodes. We chose it on accuracy grounds (see
+   [`docs/DECISIONS.md`](docs/DECISIONS.md) #3). The 46-article pilot runs through
+   it as a QA spot-check ([`docs/SCORING_RUBRIC.md`](docs/SCORING_RUBRIC.md))
+   before the full run. It is not a model comparison.
 
-**If you actually want to run this on Rivanna, start with
-[`docs/RUNNING_ON_RIVANNA.md`](docs/RUNNING_ON_RIVANNA.md).** It walks through
-every stage, from a bare account all the way to the final trend summaries,
-including the SLURM scripts, the storage and GPU allocation notes, and
-troubleshooting.
+**To run this on Rivanna, start with
+[`docs/RUNNING_ON_RIVANNA.md`](docs/RUNNING_ON_RIVANNA.md).** It covers every
+stage, from a bare account to the final trend summaries, including the SLURM
+scripts, the storage and GPU allocation notes, and troubleshooting.
 
 ## Pipeline
 
@@ -62,12 +60,12 @@ tests/                     unit tests (fixture XML + mocked model calls, no GPU 
 ## Running it
 
 The full instructions for Rivanna (modules, GPU allocation, storage) are in
-[`docs/RUNNING_ON_RIVANNA.md`](docs/RUNNING_ON_RIVANNA.md). The short version:
+[`docs/RUNNING_ON_RIVANNA.md`](docs/RUNNING_ON_RIVANNA.md). In short:
 
 ```
 pip install -r requirements.txt
 
-# 1. Sync the allofplos corpus locally (one time, it's big, see the doc above)
+# 1. Sync the allofplos corpus locally (one time; it's large, see the doc above)
 # 2. Build the filtered population index
 python -m src.build_corpus_index --out data/corpus_index.csv
 

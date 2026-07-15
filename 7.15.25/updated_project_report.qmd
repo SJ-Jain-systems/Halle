@@ -20,25 +20,22 @@ Psychology relies on samples, and how much you trust a finding depends partly on
 who was in the study. When a paper doesn't report the demographic makeup of its
 participants, you can't judge how far the claim reaches, and a later meta-analysis
 can't tell who the literature speaks for. This is the sample representativeness
-question, and it has two dimensions: a descriptive one and a temporal one.
-
-I address both. First, how often do psychology papers report participant
+question, and it has two dimensions: a descriptive one and a temporal one. I
+address both. First, how often do psychology papers report participant
 demographics (gender, race, education, socioeconomic status)? Second, has that rate
 changed from 2010 to 2026, and does it differ across subfields or across the
-COVID-19 disruption?
+COVID-19 disruption? I restrict this to a single venue, PLOS ONE, for tractability.
+It's high-volume, multidisciplinary, and fully open access, so I can retrieve the
+whole corpus and read it by machine instead of hitting paywalls. That's what makes
+a study across tens of thousands of articles feasible instead of a hand-coded
+sample of a few hundred. Since hand-coding doesn't scale to that volume, I delegate
+the reading to a large language model. For each qualifying paper, the model reads
+the methods text and returns the reported demographics in a fixed structured
+format, which I then aggregate into reporting-rate trends.
 
-I restrict this to a single venue, PLOS ONE, for tractability. It's high-volume,
-multidisciplinary, and fully open access, so I can retrieve the whole corpus and
-read it by machine instead of hitting paywalls. That's what makes a study across
-tens of thousands of articles feasible instead of a hand-coded sample of a few
-hundred.
+Prob shorten this in the future, a whole lot of yapping for a design thats not complete
 
-Since hand-coding doesn't scale to that volume, I delegate the reading to a large
-language model. For each qualifying paper, the model reads the methods text and
-returns the reported demographics in a fixed structured format, which I then
-aggregate into reporting-rate trends.
-
-## Temporal design
+## Temporal design (from last meeting)
 
 To track change over time I split the window into four periods that reflect
 distinct eras:
@@ -67,11 +64,10 @@ Two things about the schema are deliberate and they matter.
 The unit is the participant sample, not the paper. One paper can report several
 independent samples, and I code each as its own row, tied together by the shared
 article ID (its DOI). Collapsing a paper's samples into one row would discard real
-within-paper variation and bias the reporting-rate estimates.
-
-Each row also carries article-level metadata: publication date, the corresponding
-author's institution, and the full PLOS subject taxonomy for the paper. These
-support subgroup analysis and let me track where each row came from.
+within-paper variation and bias the reporting-rate estimates. Each row also carries
+article-level metadata: publication date, the corresponding author's institution,
+and the full PLOS subject taxonomy for the paper. These support subgroup analysis
+and let me track where each row came from.
 
 ## Inclusion criteria
 
@@ -163,6 +159,8 @@ mismatches. PLOS's controlled vocabulary has no "Quantitative psychology" term a
 all, so that one would have matched nothing. And PLOS uses several subfields the
 plan didn't list, including Experimental psychology, Psychometrics, Behavior, and
 Emotions.
+
+[No quant psych, rip hopes n dreams of PLOS ONE]
 
 Rather than force a preset list the taxonomy doesn't honor, I chose to include all
 subfields. The design became taxonomy-driven: I keep every article PLOS files under
@@ -435,9 +433,6 @@ across the early, middle, COVID, and post-COVID periods.
 
 # Reproducibility
 
-All the code and documentation is version-controlled on GitHub
-(SJ-Jain-systems/Halle). Each stage is its own testable module:
-
 ```
 src/
   solr_client.py          discovery via the PLOS Solr search index
@@ -456,25 +451,29 @@ scripts/                  the diagnostics that isolated the 2015 gap and more
 tests/                    33 automated tests over the non-model logic
 ```
 
-Two points are worth emphasizing for anyone auditing this. The non-model logic is
-covered by 33 automated tests spanning parsing, filtering, sampling, and
+Two points are worth emphasizing for anyone auditing the work. The non-model logic
+is covered by 33 automated tests spanning parsing, filtering, sampling, and
 aggregation; the model itself is validated by hand-coding the pilot. And the
 diagnostic scripts that isolated the schema drift and the 2015 gap are kept in the
 repo, so the evidence behind each design decision remains inspectable.
 
-# Open questions
+# questions for the phD peeps
 
 Three decisions would benefit from input before the full run.
 
-1. Subfield scope. The taxonomy yields 23 psychology subfields, some broad
-   (Behavior, Emotions) and some barely about human participants (for example
-   animal-behavior work filed under Psychology, or Instinct). Do I analyze all 23,
-   or narrow to a defined core of human-participant subfields, and if so which?
+1. The taxonomy yields 23 psychology subfields, some broad
+   (Behavior, Emotions) and some tangential to human-participant research (for
+   example animal-behavior work filed under Psychology, or Instinct). Do I
+   analyze all 23, or restrict to a defined core of human-participant subfields,
+   and if so which? # Highkey ask to restrict some and which ones to restrict to.
 
-2. Coverage at the boundaries. Pre-2011 articles use the older tagging generation,
-   and some 2025 to 2026 articles lack local full text. Are the earliest and latest
-   years complete enough for a fair longitudinal comparison, or should I bound the
-   window (for example 2011 to 2024)?
+2. Coverage at the interval boundaries. Pre-2011 articles use the older tagging
+   generation, and a fraction of 2025 to 2026 articles lack local full text. Are
+   the earliest and latest years complete enough to support a fair longitudinal
+   comparison, or
 
-3. Validation threshold. What level of pilot accuracy, measured against the scoring
-   rubric, justifies proceeding to the full run, and who does the hand-coding?
+
+    Should I bound the analysis window (for example 2011 to 2024)? Also explain 2015 having to use SOLR to fill the hole. PLOS ONE is a bit incomplete in 2015 and 2013, so the SOLR query is used to fill the gap.
+
+3. Validation threshold. What level of pilot accuracy, measured against the
+   scoring rubric, justifies proceeding to the full run. I have manual adjudification of the pilot as a place holder at the moment, but I need to know what threshold of accuracy is acceptable to proceed with the full run.
