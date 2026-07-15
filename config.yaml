@@ -10,3 +10,16 @@ corpus:
 sampling:
   per_subfield: 2
   seed: 42
+
+# Human-validation pilot + QA thresholds (docs/DECISIONS.md #4, 7/15 meeting).
+# The pilot is stratified to guarantee `min_per_subfield` from every psychology
+# subfield, then topped up proportionally to `pilot_size` total. The model's
+# extraction is scored against the human-coded gold set and must clear each
+# threshold (recall/precision/accuracy) per demographic variable and overall.
+validation:
+  pilot_size: 100
+  min_per_subfield: 2
+  thresholds:
+    recall: 0.90
+    precision: 0.90
+    accuracy: 0.90

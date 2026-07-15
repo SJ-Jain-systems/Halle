@@ -26,8 +26,16 @@ def test_build_template_rows_one_row_per_article_with_helpers():
     assert first["doi"] == ARTICLES[0]["doi"]
     assert first["subfield"] == "Social psychology"
     assert first["sample_id"] == 1
+    assert first["coder"] == ""
     assert first["gender"] == ""
     assert first["ses"] == ""
+
+
+def test_template_has_coder_column_after_doi():
+    assert "coder" in TEMPLATE_FIELDS
+    # DOI first, coder second (per the 7/15 meeting).
+    assert TEMPLATE_FIELDS[0] == "doi"
+    assert TEMPLATE_FIELDS[1] == "coder"
 
 
 def test_write_template_header_and_contents(tmp_path):

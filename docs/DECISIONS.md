@@ -67,15 +67,23 @@ then stratifies over whatever subfields the index actually contains.
 Why stratify instead of pooling and sampling uniformly at random: a uniform
 draw risks a high-volume subfield (e.g. social/cognitive) crowding out the
 others, and the point of the pilot is to sanity-check the chosen model's
-extraction quality *across* subfields before spending GPU time on the full
-run. 2-per-subfield guarantees coverage. (This makes the pilot 2×N articles
-for N subfields present, rather than a fixed 10 — the brief's "10" assumed
-exactly 5 subfields.)
+extraction quality *across* subfields before spending GPU time on the full run.
+
+**Size (updated 7/15 meeting): 100 articles.** The initial pilot was 46
+(2 per subfield); the team grew it to **100** for human validation, in line
+with the sample sizes in the cited literature (see `docs/references.md`:
+30–900 validation articles across the three papers). To keep coverage while
+hitting 100, the draw guarantees a **floor** of `min_per_subfield` (2) from
+every subfield, then **tops up** to `pilot_size` (100) by allocating the
+remaining slots proportionally to each subfield's article count
+(largest-remainder rounding). If the floors alone already exceed the target,
+coverage wins.
 
 Implementation: `src/sample_articles.py`, function `stratified_sample()`
-(auto-derives subfields from the index, skips any with < 2 articles), reading
-from `data/corpus_index.csv` (no network). Seed defaults to `42`; override
-with `--seed`.
+(auto-derives subfields from the index, skips any with < floor articles),
+reading from `data/corpus_index.csv` (no network). `pilot_size`,
+`min_per_subfield`, and `seed` come from `config.yaml` (`validation` /
+`sampling`); override with `--size`, `--min-per-subfield`, `--seed`.
 
 ## 3. Model choice
 
@@ -100,8 +108,45 @@ allocation, no per-token API cost, no rate limits) removes that constraint
 entirely — there's no real tradeoff left to weigh, so there's no reason to
 keep Mistral in the loop as a second candidate.
 
-`src/run_pilot.py` (`slurm/run_pilot.slurm`) still runs the 46-article pilot
-through Llama-3.3-70B-Instruct before the full corpus run — not to compare
-it against anything, but as a QA spot-check (`docs/SCORING_RUBRIC.md`) that
-extraction quality looks right across the psychology subfields before spending real
-GPU time on ~thousands of articles.
+`src/run_pilot.py` (`slurm/run_pilot.slurm`) still runs the pilot (100
+articles) through Llama-3.3-70B-Instruct before the full corpus run — not to
+compare it against anything, but as a QA spot-check (`docs/SCORING_RUBRIC.md`)
+that extraction quality looks right across the psychology subfields before
+spending real GPU time on ~thousands of articles.
+
+## 4. Validation metrics & thresholds
+
+**Decision (7/15 meeting): validate the model against a multi-coder human gold
+set using recall, precision, and accuracy, each gated at ≥ 0.90, per demographic
+variable and overall.**
+
+The pipeline's QA moved from ad-hoc agreement scores to the standard
+information-retrieval framing reviewers expect. For each demographic's
+*reported* flag, the human gold is the truth and the model is the classifier
+(TP/FP/FN/TN → recall/precision/accuracy):
+
+- **Recall** — the model doesn't *miss* demographics that are reported.
+- **Precision** — the model doesn't *hallucinate* demographics that aren't in
+  the article.
+- **Accuracy** — overall correctness of the reported/not decision.
+
+**Thresholds: 0.90 for all three.** Chosen from the cited literature
+(`docs/references.md`): the benchmark paper sets recall ≥0.80 / precision ≥0.90
+for the "study information" tier our demographics fall under; GPT-as-second-
+reviewer reports precision 0.91 / recall 0.89; Elicit gates at ~0.87 accuracy.
+The team rounded to a single 0.90 bar so the write-up isn't citing a threshold
+*below* the numbers those papers already achieved.
+
+**Ground truth uses multiple blind coders** to reduce bias: each codes the same
+pilot articles (gold sheet keyed by DOI + coder initials), and
+`src/merge_gold.py` reports inter-rater agreement (percent agreement + Cohen's
+kappa) and produces a majority-vote consensus gold set, flagging disagreements
+for adjudication. `src/score_pilot.py` then scores the model against that
+consensus and fails (exit 1) if any variable or the overall micro-average misses
+a threshold.
+
+Implementation: thresholds in `config.yaml` (`validation.thresholds`); metrics
+in `src/score_pilot.py` (`confusion_counts`, `metrics_from_counts`); multi-coder
+merge/agreement in `src/merge_gold.py`. SES is often unreported (~2/3 of
+articles omit it), so the scorer surfaces the SES reported-rate to keep its many
+true negatives from masking poor coverage.

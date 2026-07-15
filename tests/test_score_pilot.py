@@ -1,6 +1,13 @@
 import csv
 
-from src.score_pilot import load_gold, score, write_per_doi
+from src.score_pilot import (
+    confusion_counts,
+    load_gold,
+    metrics_from_counts,
+    score,
+    write_metrics,
+    write_per_doi,
+)
 
 DOI = "10.1371/journal.pone.0000001"
 
@@ -85,6 +92,71 @@ def test_load_gold_parses_combined_columns(tmp_path):
     rows = load_gold(str(gold_csv))
     assert rows[0]["gender"] == {"reported": 1, "pct": {"male": 40, "female": 60}}
     assert rows[0]["ses"] == {"reported": 0, "value": None}
+
+
+def test_confusion_and_metrics_perfect_match_pass_gate():
+    # default gold_row: gender reported=1, race/education/ses reported=0
+    gold = [gold_row()]
+    counts = confusion_counts(gold, model_payload([gold_row()]))
+    assert counts["gender"] == {"tp": 1, "fp": 0, "fn": 0, "tn": 0}
+    assert counts["race"] == {"tp": 0, "fp": 0, "fn": 0, "tn": 1}
+    metrics = metrics_from_counts(counts)
+    assert metrics["overall"]["recall"] == 1.0
+    assert metrics["overall"]["precision"] == 1.0
+    assert metrics["overall"]["accuracy"] == 1.0
+    assert metrics["overall"]["passed"] is True
+
+
+def test_missed_report_is_false_negative_and_fails_recall():
+    gold = [gold_row(gender={"reported": 1, "pct": {"male": 50, "female": 50}})]
+    model = model_payload([gold_row(gender={"reported": 0, "pct": {}})])
+    counts = confusion_counts(gold, model)
+    assert counts["gender"]["fn"] == 1
+    metrics = metrics_from_counts(counts)
+    assert metrics["gender"]["recall"] == 0.0
+    assert metrics["gender"]["recall_pass"] is False
+    assert metrics["overall"]["passed"] is False
+
+
+def test_hallucinated_report_is_false_positive_and_fails_precision():
+    gold = [gold_row(ses={"reported": 0, "value": None})]
+    model = model_payload([gold_row(ses={"reported": 1, "value": None})])
+    counts = confusion_counts(gold, model)
+    assert counts["ses"]["fp"] == 1
+    metrics = metrics_from_counts(counts)
+    assert metrics["ses"]["precision"] == 0.0
+
+
+def test_ses_02_scale_collapses_to_reported():
+    # SES reported as a numeric threshold (2) still counts as "reported" (>=1).
+    gold = [gold_row(ses={"reported": 2, "value": 30000})]
+    model = model_payload([gold_row(ses={"reported": 2, "value": 30000})])
+    counts = confusion_counts(gold, model)
+    assert counts["ses"]["tp"] == 1
+
+
+def test_missing_model_output_counts_reported_vars_as_false_negatives():
+    gold = [gold_row()]  # gender reported
+    counts = confusion_counts(gold, {})
+    assert counts["gender"]["fn"] == 1
+    assert counts["race"]["tn"] == 1
+
+
+def test_summary_carries_gate_and_score_passes_thresholds():
+    _, summary = score([gold_row()], model_payload([gold_row()]))
+    assert summary["passed"] is True
+    assert "overall" in summary["metrics"]
+    assert summary["metrics"]["gender"]["recall"] == 1.0
+
+
+def test_write_metrics_roundtrips(tmp_path):
+    _, summary = score([gold_row()], model_payload([gold_row()]))
+    out = tmp_path / "metrics.csv"
+    write_metrics(summary["metrics"], str(out))
+    with open(out, newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    variables = {r["variable"] for r in rows}
+    assert {"gender", "race", "education", "ses", "overall"} <= variables
 
 
 def test_write_per_doi_roundtrips(tmp_path):

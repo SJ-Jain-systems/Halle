@@ -5,16 +5,20 @@ Pipeline for studying the representativeness of demographic reporting
 articles, 2010–2026, year by year and by stage (early / middle / COVID /
 post-COVID).
 
-Source brief: see the three open decisions and their reasoning in
+Source brief: see the project decisions and their reasoning in
 [`docs/DECISIONS.md`](docs/DECISIONS.md):
 
 1. **Data access** — `allofplos` only (github.com/PLOS/allofplos). The whole
    corpus is synced locally once; every filter (subfield, article type,
    date) and every full-text read after that is a local scan, no network.
-2. **Pilot sample** — 46 articles, stratified 2 per psychology subfield
-   (all subfields PLOS tags — social, cognitive, clinical, developmental,
-   experimental psychology, psychometrics, ...), fixed random
-   seed for reproducibility.
+2. **Pilot sample** — 100 articles for human validation (7/15 meeting): a floor
+   of 2 per psychology subfield (all subfields PLOS tags — social, cognitive,
+   clinical, developmental, experimental psychology, psychometrics, ...) then
+   topped up proportionally, fixed random seed for reproducibility. The model's
+   extraction is validated against a multi-coder human gold set on
+   recall/precision/accuracy (each ≥ 0.90) before the full run — see
+   [`docs/SCORING_RUBRIC.md`](docs/SCORING_RUBRIC.md) and
+   [`docs/references.md`](docs/references.md).
 3. **Model** — `meta-llama/Llama-3.3-70B-Instruct`, run locally on Rivanna
    GPU nodes. Final choice, on accuracy grounds — see
    [`docs/DECISIONS.md`](docs/DECISIONS.md) #3. The 46-article pilot still
@@ -31,8 +35,9 @@ troubleshooting.
 ## Pipeline
 
 ```
-allofplos corpus → build_corpus_index → sample_articles (pilot)
-                                       → run_pilot (QA spot-check)
+allofplos corpus → build_corpus_index → sample_articles (100-article pilot)
+                                       → run_pilot → merge_gold → score_pilot
+                                         (recall/precision/accuracy ≥ 0.90 gate)
                                        → run_pipeline (full corpus)
                                        → merge_shards → analyze_trends
 ```
@@ -45,17 +50,21 @@ src/
   allofplos_client.py      local corpus directory access — no network calls
   subfields.py             time-stage buckets (subfields are taxonomy-driven, not hardcoded)
   build_corpus_index.py    scans the corpus, applies inclusion criteria, writes data/corpus_index.csv
-  sample_articles.py       draws the 46-article stratified pilot sample
+  sample_articles.py       draws the 100-article stratified pilot sample (floor + proportional top-up)
   extract_demographics.py  prompt + schema + validation for demographic rows
   model_backend.py         local GPU inference (vLLM / transformers) for Rivanna
-  run_pilot.py             runs the pilot sample through the chosen model for a QA spot-check
+  run_pilot.py             runs the pilot sample through the chosen model
+  make_gold_template.py    blank multi-coder hand-coding sheet for the pilot gold set
+  merge_gold.py            merges coders -> inter-rater agreement + consensus gold
+  score_pilot.py           recall/precision/accuracy gate (≥0.90) vs the gold set
   run_pipeline.py          full-scale extraction over the entire filtered corpus
   merge_shards.py          combines SLURM-array shard outputs into one table
   analyze_trends.py        year-by-year / by-stage aggregation — the actual research answer
 docs/
-  DECISIONS.md             the three decisions above, with reasoning
+  DECISIONS.md             the project decisions (data access, sampling, model, validation metrics)
   RUNNING_ON_RIVANNA.md    step-by-step guide to running the full pipeline on Rivanna
-  SCORING_RUBRIC.md        QA rubric for the pilot run
+  SCORING_RUBRIC.md        recall/precision/accuracy validation gate + multi-coder gold workflow
+  references.md            papers behind the validation thresholds (7/15 meeting)
 slurm/                     SLURM batch scripts for every GPU/CPU stage
 tests/                     unit tests (fixture XML + mocked model calls, no GPU/network needed)
 ```
@@ -92,6 +101,6 @@ python -m src.analyze_trends --table data/demographics_table.csv --out-dir data/
 pytest
 ```
 
-25 tests, all offline: fixture JATS XML in `tests/fixtures/` stands in for
+All tests offline: fixture JATS XML in `tests/fixtures/` stands in for
 the real corpus, and a fake `ModelClient` stands in for real model calls —
 nothing here requires a GPU or network access.

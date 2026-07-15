@@ -3,20 +3,27 @@
 
 Reads the completed gold CSV (produced from src/make_gold_template.py and coded
 by hand) and the model's per-article JSON output written by src/run_pilot.py
-(results/<model_id>/<doi>.json), aligns rows by (doi, sample_id), and reports
-per-field agreement mapped to the rubric's four axes:
+(results/<model_id>/<doi>.json), aligns rows by (doi, sample_id), and reports:
 
-  - Coverage / reporting flags : does gold `*_reported` match the model's?
-  - Numeric accuracy           : do the reported `*_pct` breakdowns agree?
-  - Multi-sample handling       : one gold row per sample matched by the model?
-  - Schema adherence           : model rows carry exactly the required keys?
+  - Recall / precision / accuracy : the primary validation gate (7/15 meeting,
+    docs/DECISIONS.md #4). For each demographic's *reported* flag, treat the
+    human gold as truth and the model as the classifier, count TP/FP/FN/TN, and
+    compute recall, precision, and accuracy per variable and micro-averaged
+    overall. Each must clear the config threshold (default 90%). Recall = the
+    model doesn't miss demographics that ARE reported; precision = it doesn't
+    hallucinate ones that aren't.
+  - Numeric accuracy : do the reported `pct` breakdowns agree (within a
+    percentage-point tolerance)?
+  - Multi-sample handling : one gold row per sample matched by the model?
+  - Schema adherence : model rows carry exactly the required keys?
 
 Usage:
     python -m src.score_pilot \\
         --gold data/pilot_gold.csv \\
         --results-dir results \\
         --model meta-llama/Llama-3.3-70B-Instruct \\
-        --out results/pilot_accuracy.csv
+        --out results/pilot_accuracy.csv \\
+        --metrics-out results/pilot_metrics.csv
 """
 from __future__ import annotations
 
@@ -36,6 +43,10 @@ from src.extract_demographics import (
 FLAG_FIELDS = list(DEMOGRAPHIC_FIELDS)  # gender, race, education, ses
 PCT_DEMOGRAPHICS = list(PCT_FIELDS)     # gender, race, education
 
+# Golden-standard QA gate (config.yaml `validation.thresholds`, docs/DECISIONS.md
+# #4). Overridable via load_thresholds(); this is the fallback if no config.
+DEFAULT_THRESHOLDS = {"recall": 0.90, "precision": 0.90, "accuracy": 0.90}
+
 
 def _num(x) -> float:
     if x is None or x == "":
@@ -51,6 +62,16 @@ def _to_int(x):
 
 def _reported(field) -> int | None:
     return (field or {}).get("reported")
+
+
+def _reported_binary(field) -> int:
+    """Collapse a demographic's reported flag to 0/1 for the confusion matrix.
+    SES uses a 0/1/2 detail scale, so anything >= 1 counts as reported."""
+    return 1 if ((field or {}).get("reported") or 0) >= 1 else 0
+
+
+def _safe_div(numer: float, denom: float) -> float | None:
+    return round(numer / denom, 3) if denom else None
 
 
 def load_gold(gold_csv: str) -> list[dict]:
@@ -100,12 +121,96 @@ def _by_sample(rows: list[dict]) -> dict[int, dict]:
     return {int(r["sample_id"]): r for r in rows}
 
 
-def score(gold_rows: list[dict], model_outputs: dict[str, dict], tol: float = 1.0):
+def confusion_counts(gold_rows: list[dict], model_outputs: dict[str, dict]) -> dict[str, dict]:
+    """Per-variable (and micro-averaged `overall`) TP/FP/FN/TN on the *reported*
+    flag, treating the human gold as truth.
+
+    The gold set is the universe of (doi, sample_id) pairs scored. A gold
+    article with no/failed model output, or a gold sample the model didn't
+    produce, counts as the model saying "not reported" (0) for every variable —
+    so a genuinely-reported demographic there becomes a false negative rather
+    than being silently dropped. Model samples with no gold counterpart are not
+    counted here (over-/under-production is tracked separately by
+    sample_count_match_rate in score()).
+    """
+    gold_by_doi: dict[str, list[dict]] = defaultdict(list)
+    for r in gold_rows:
+        gold_by_doi[r["doi"]].append(r)
+
+    counts = {v: {"tp": 0, "fp": 0, "fn": 0, "tn": 0} for v in FLAG_FIELDS}
+    for doi, rows in gold_by_doi.items():
+        gold = _by_sample(rows)
+        payload = model_outputs.get(doi)
+        ok = payload is not None and payload.get("status") == "ok"
+        model = _by_sample(payload["rows"]) if ok else {}
+        for sid, g in gold.items():
+            m = model.get(sid, {})
+            for v in FLAG_FIELDS:
+                gb = _reported_binary(g.get(v))
+                mb = _reported_binary(m.get(v))
+                cell = counts[v]
+                if gb == 1 and mb == 1:
+                    cell["tp"] += 1
+                elif gb == 0 and mb == 1:
+                    cell["fp"] += 1
+                elif gb == 1 and mb == 0:
+                    cell["fn"] += 1
+                else:
+                    cell["tn"] += 1
+
+    overall = {"tp": 0, "fp": 0, "fn": 0, "tn": 0}
+    for v in FLAG_FIELDS:
+        for k in overall:
+            overall[k] += counts[v][k]
+    counts["overall"] = overall
+    return counts
+
+
+def _passes(value: float | None, threshold: float) -> bool | None:
+    """None (metric undefined, e.g. recall with no gold positives) is treated as
+    not-applicable rather than a failure."""
+    return None if value is None else value >= threshold
+
+
+def metrics_from_counts(counts: dict[str, dict], thresholds: dict | None = None) -> dict[str, dict]:
+    """recall / precision / accuracy / f1 (+ per-metric and per-variable
+    pass/fail) from confusion_counts()."""
+    thresholds = thresholds or DEFAULT_THRESHOLDS
+    metrics: dict[str, dict] = {}
+    for v, c in counts.items():
+        tp, fp, fn, tn = c["tp"], c["fp"], c["fn"], c["tn"]
+        recall = _safe_div(tp, tp + fn)
+        precision = _safe_div(tp, tp + fp)
+        accuracy = _safe_div(tp + tn, tp + fp + fn + tn)
+        f1 = _safe_div(2 * tp, 2 * tp + fp + fn)
+        passes = {
+            "recall_pass": _passes(recall, thresholds["recall"]),
+            "precision_pass": _passes(precision, thresholds["precision"]),
+            "accuracy_pass": _passes(accuracy, thresholds["accuracy"]),
+        }
+        applicable = [p for p in passes.values() if p is not None]
+        metrics[v] = {
+            "tp": tp, "fp": fp, "fn": fn, "tn": tn,
+            "recall": recall, "precision": precision, "accuracy": accuracy, "f1": f1,
+            **passes,
+            "passed": all(applicable),
+        }
+    return metrics
+
+
+def score(
+    gold_rows: list[dict],
+    model_outputs: dict[str, dict],
+    tol: float = 1.0,
+    thresholds: dict | None = None,
+):
     """Score model output against gold, aligned by (doi, sample_id).
 
     Returns (per_doi_records, summary). The gold set defines the universe of
     articles scored; a gold article with no model output is scored as a total
-    miss on coverage/schema.
+    miss on coverage/schema. `summary["metrics"]` holds the per-variable and
+    overall recall/precision/accuracy gate, and `summary["passed"]` is the
+    overall pass/fail.
     """
     gold_by_doi: dict[str, list[dict]] = defaultdict(list)
     for r in gold_rows:
@@ -191,6 +296,9 @@ def score(gold_rows: list[dict], model_outputs: dict[str, dict], tol: float = 1.
         tot_num_correct += num_correct
         tot_num += num_total
 
+    counts = confusion_counts(gold_rows, model_outputs)
+    metrics = metrics_from_counts(counts, thresholds)
+
     n_docs = len(gold_by_doi)
     summary = {
         "n_articles": n_docs,
@@ -198,6 +306,8 @@ def score(gold_rows: list[dict], model_outputs: dict[str, dict], tol: float = 1.
         "numeric_accuracy": round(tot_num_correct / tot_num, 3) if tot_num else None,
         "sample_count_match_rate": round(n_sample_match / n_docs, 3) if n_docs else None,
         "schema_ok_rate": round(n_schema_ok / n_docs, 3) if n_docs else None,
+        "metrics": metrics,
+        "passed": metrics["overall"]["passed"],
     }
     return per_doi, summary
 
@@ -220,12 +330,76 @@ def write_per_doi(per_doi: list[dict], out_path: str) -> None:
         writer.writerows(per_doi)
 
 
+METRICS_FIELDS = [
+    "variable", "tp", "fp", "fn", "tn",
+    "recall", "precision", "accuracy", "f1",
+    "recall_pass", "precision_pass", "accuracy_pass", "passed",
+]
+# Order rows so the four demographics come first and `overall` last.
+_METRICS_ROW_ORDER = FLAG_FIELDS + ["overall"]
+
+
+def write_metrics(metrics: dict[str, dict], out_path: str) -> None:
+    """Write the per-variable + overall recall/precision/accuracy gate to CSV."""
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=METRICS_FIELDS, extrasaction="ignore")
+        writer.writeheader()
+        for variable in _METRICS_ROW_ORDER:
+            if variable in metrics:
+                writer.writerow({"variable": variable, **metrics[variable]})
+
+
+def load_thresholds(config_path: str) -> dict:
+    """Read validation.thresholds from config.yaml, falling back to defaults."""
+    import yaml
+
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+    except OSError:
+        return dict(DEFAULT_THRESHOLDS)
+    thresholds = (config.get("validation") or {}).get("thresholds") or {}
+    return {**DEFAULT_THRESHOLDS, **thresholds}
+
+
+def _fmt_gate(value, passed) -> str:
+    if value is None:
+        return "  n/a"
+    tag = "PASS" if passed else "FAIL" if passed is not None else "n/a"
+    return f"{value:.3f} {tag}"
+
+
 def _print_summary(summary: dict) -> None:
     print(f"Scored {summary['n_articles']} pilot articles against the gold set:")
-    print(f"  Coverage (reporting-flag accuracy) : {summary['reporting_flag_accuracy']}")
-    print(f"  Numeric accuracy (% breakdowns)    : {summary['numeric_accuracy']}")
-    print(f"  Multi-sample handling (id match)   : {summary['sample_count_match_rate']}")
-    print(f"  Schema adherence (valid rows)      : {summary['schema_ok_rate']}")
+    metrics = summary.get("metrics", {})
+    if metrics:
+        gate = "PASS" if summary.get("passed") else "FAIL"
+        print(f"  Recall / precision / accuracy gate (overall: {gate}):")
+        header = f"    {'variable':<12} {'recall':>12} {'precision':>12} {'accuracy':>12}"
+        print(header)
+        for variable in _METRICS_ROW_ORDER:
+            m = metrics.get(variable)
+            if not m:
+                continue
+            print(
+                f"    {variable:<12} "
+                f"{_fmt_gate(m['recall'], m['recall_pass']):>12} "
+                f"{_fmt_gate(m['precision'], m['precision_pass']):>12} "
+                f"{_fmt_gate(m['accuracy'], m['accuracy_pass']):>12}"
+            )
+        ses = metrics.get("ses", {})
+        ses_total = ses.get("tp", 0) + ses.get("fp", 0) + ses.get("fn", 0) + ses.get("tn", 0)
+        ses_reported = ses.get("tp", 0) + ses.get("fn", 0)
+        if ses_total:
+            print(
+                f"    (SES reported in {ses_reported}/{ses_total} gold samples "
+                f"= {ses_reported / ses_total:.0%} — often sparse)"
+            )
+    print("  Secondary axes:")
+    print(f"    Numeric accuracy (% breakdowns)  : {summary['numeric_accuracy']}")
+    print(f"    Multi-sample handling (id match) : {summary['sample_count_match_rate']}")
+    print(f"    Schema adherence (valid rows)    : {summary['schema_ok_rate']}")
 
 
 def main() -> None:
@@ -237,6 +411,8 @@ def main() -> None:
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--model", default=None, help="Override config.yaml's default_model")
     parser.add_argument("--out", default="results/pilot_accuracy.csv")
+    parser.add_argument("--metrics-out", default="results/pilot_metrics.csv",
+                        help="Per-variable recall/precision/accuracy gate CSV")
     parser.add_argument("--tol", type=float, default=1.0, help="Tolerance for percentage-point agreement")
     args = parser.parse_args()
 
@@ -246,12 +422,16 @@ def main() -> None:
         with open(args.config, encoding="utf-8") as f:
             model_id = yaml.safe_load(f)["default_model"]
 
+    thresholds = load_thresholds(args.config)
     gold_rows = load_gold(args.gold)
     model_outputs = load_model_outputs(args.results_dir, model_id)
-    per_doi, summary = score(gold_rows, model_outputs, tol=args.tol)
+    per_doi, summary = score(gold_rows, model_outputs, tol=args.tol, thresholds=thresholds)
     write_per_doi(per_doi, args.out)
+    write_metrics(summary["metrics"], args.metrics_out)
     _print_summary(summary)
     print(f"Wrote per-article scores to {args.out}")
+    print(f"Wrote recall/precision/accuracy gate to {args.metrics_out}")
+    raise SystemExit(0 if summary["passed"] else 1)
 
 
 if __name__ == "__main__":
