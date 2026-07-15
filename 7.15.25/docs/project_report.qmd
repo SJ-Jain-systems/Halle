@@ -16,33 +16,33 @@ format:
 
 # The research question
 
-Empirical psychology rests on samples, and the credibility of a finding depends
-in part on who was sampled. When an article omits the demographic composition of
-its participants, a reader cannot judge the scope of the claim, and a later
-meta-analysis cannot assess who the literature actually speaks for. This is the
-question of sample representativeness, and it has both a descriptive and a
-temporal dimension.
+Psychology runs on samples, and whether you buy a finding depends partly on who
+was actually in the study. When a paper doesn't say what its participants looked
+like demographically, you can't really tell how far the claim reaches, and a
+later meta-analysis can't tell who the literature is actually speaking for. That's
+the sample representativeness question, and it has two sides: a descriptive one
+and a change-over-time one.
 
-I address both. First, at what rate do psychology articles report participant
-demographics (gender, race, education, and socioeconomic status)? Second, has
-that rate shifted over 2010 to 2026, and does the trajectory differ across
-subfields or across the disruption of the COVID-19 pandemic?
+I'm after both. First, how often do psychology papers actually report participant
+demographics (gender, race, education, socioeconomic status)? Second, has that
+changed from 2010 to 2026, and does it look different across subfields or across
+the COVID-19 disruption?
 
-I restrict attention to a single venue, PLOS ONE, for tractability. It is
-high-volume, multidisciplinary, and fully open access, so the entire corpus is
-retrievable and machine-readable rather than locked behind paywalls. That is what
-makes a corpus-scale study of tens of thousands of articles feasible instead of a
-hand-coded sample of a few hundred.
+I stick to one venue, PLOS ONE, to keep things manageable. It's high-volume,
+covers lots of fields, and is fully open access, so I can actually pull the whole
+corpus and read it by machine instead of hitting paywalls. That's what makes a
+study across tens of thousands of articles doable instead of hand-coding a few
+hundred.
 
-Because manual coding does not scale to that volume, I delegate the reading to a
-large language model. For each qualifying article, the model reads the methods
-text and returns the reported demographics in a fixed structured form, which I
-then aggregate into reporting-rate trends.
+Hand-coding doesn't scale to that many articles, so I hand the reading off to a
+large language model. For each qualifying paper, the model reads the methods text
+and gives back the reported demographics in a fixed structured format, which I
+then roll up into reporting-rate trends.
 
 ## Temporal design
 
-To characterize change over time I partition the study window into four periods
-chosen to reflect distinct eras:
+To track change over time I split the window into four periods that line up with
+distinct eras:
 
 | Stage | Years | Rationale |
 |-------|-------|-----------|
@@ -53,8 +53,8 @@ chosen to reflect distinct eras:
 
 # The extraction schema
 
-For every distinct participant sample an article describes, I code whether, and
-in how much detail, each demographic was reported:
+For every distinct participant sample a paper describes, I code whether each
+demographic was reported and how much detail there was:
 
 | Demographic | Coded fields |
 |-------------|--------------|
@@ -63,29 +63,29 @@ in how much detail, each demographic was reported:
 | Education | Reported (yes/no) plus the percentage with versus without college |
 | Socioeconomic status | An ordinal 0/1/2 code: 0 = not reported, 1 = reported only categorically (e.g. "low income"), 2 = reported with a numeric threshold (e.g. below $30,000) |
 
-Two features of the schema are deliberate and consequential.
+Two things about the schema are on purpose and they matter.
 
-The unit of analysis is the participant sample, not the article. A single article
-may report several independent samples, and I code each as its own record, keyed
-to the shared article identifier (its DOI). Collapsing an article's samples into
-one record would discard genuine within-article variation and bias the
-reporting-rate estimates.
+The unit is the participant sample, not the paper. One paper can report several
+separate samples, and I code each as its own row, tied together by the shared
+article ID (its DOI). If I squashed a paper's samples into one row I'd throw away
+real within-paper variation and skew the reporting-rate numbers.
 
-Each record also carries article-level metadata: publication date, the
+Each row also carries some article-level metadata: publication date, the
 corresponding author's institution, and the full PLOS subject taxonomy for the
-article. These support subgroup analysis and provenance tracking.
+paper. Those let me break things down by subgroup and keep track of where each row
+came from.
 
 ## Inclusion criteria
 
-An article enters the corpus only if it is an empirical research article (not an
-editorial, correction, or review), published in PLOS ONE, classified by PLOS
-under psychology (any subfield), and dated between 2010 and 2026. I place no
-lower bound on sample size.
+A paper makes it into the corpus only if it's an empirical research article (not
+an editorial, correction, or review), published in PLOS ONE, filed by PLOS under
+psychology (any subfield), and dated between 2010 and 2026. I don't set any
+minimum sample size.
 
 # Pipeline architecture
 
-The system is a linear sequence of stages, each producing an artifact the next
-stage consumes:
+The whole thing is a straight line of stages, each one producing something the
+next stage eats:
 
 ```
 1. Enumerate qualifying psychology articles  ->  master index (58,467 articles)  [DONE]
@@ -96,40 +96,39 @@ stage consumes:
 6. Aggregate the table                       ->  reporting-rate trends (the result)
 ```
 
-Stages 1 and 2 are complete and verified. The rest of this document reconstructs
-how I built them and what the later stages still raise.
+Stages 1 and 2 are done and checked. The rest of this doc walks through how I
+built them and what the later stages still leave open.
 
 ## Computing environment
 
-The pipeline runs on Rivanna, the University of Virginia's high-performance
-computing cluster. Two constraints motivate this. The chosen model is too large
-for commodity hardware and requires several high-memory GPUs held in parallel.
-And the full extraction over 58,467 articles is embarrassingly parallel, so I
-partition it across many workers to complete in tractable wall-clock time. The
-orchestration is written to tolerate preemption and session loss, since
-individual jobs run for hours.
+The pipeline runs on Rivanna, UVA's high-performance computing cluster. Two things
+push it there. The model is too big for ordinary hardware and needs several
+high-memory GPUs at once. And the full extraction over 58,467 articles is
+embarrassingly parallel, so I split it across a lot of workers to finish in a
+reasonable amount of wall-clock time. The orchestration is written to survive
+preemption and lost sessions, since individual jobs run for hours.
 
 # Decision 1: data acquisition
 
-This was the most consequential design axis, and the reasoning is worth recording
-in full, because I reached the final architecture only after an initial approach
-failed against the realities of the corpus. I began with one plan, hit four
-distinct problems, and converged on a different and more defensible design.
+This was the biggest design call, and the reasoning is worth writing out in full,
+because I only landed on the final setup after my first approach ran into the
+realities of the corpus. I started with one plan, hit four separate problems, and
+ended up somewhere different and more defensible.
 
 ## The initial approach: bulk local corpus
 
-PLOS distributes an open dataset, allofplos, that provides every PLOS article as
-a JATS XML file. I ingested it in full: roughly 391,000 articles, about 9 GB
-compressed, held on the cluster. Each file embeds not only the article text but
-PLOS's hierarchical subject taxonomy, encoded as nested tags:
+PLOS hands out an open dataset, allofplos, with every PLOS article as a JATS XML
+file. I pulled the whole thing: roughly 391,000 articles, about 9 GB compressed,
+sitting on the cluster. Each file has not just the article text but PLOS's nested
+subject taxonomy, encoded as tags:
 
 ```
 Biology and life sciences  ->  Psychology  ->  Social psychology
 ```
 
-The attraction was self-containment: parse the taxonomy from each file, keep the
-psychology articles, and never depend on a network service again. My parser
-descended to the subfield directly beneath a "Psychology" node:
+The appeal was self-containment: parse the taxonomy out of each file, keep the
+psychology articles, and never depend on a network service again. My parser went
+straight to the subfield sitting one level under a "Psychology" node:
 
 ```python
 def get_psychology_subfields(article):
@@ -146,34 +145,33 @@ def get_psychology_subfields(article):
 
 ## Problem A: taxonomy schema drift
 
-My first implementation returned zero psychology articles. I diagnosed it by
-serializing the raw taxonomy block of several recent articles and reading it
-directly. The tags were present, but the container enclosing them had been
-renamed. PLOS annotates each taxonomy block with a type attribute; legacy
-articles use the value "Discipline", whereas current articles use "Discipline-v3".
-My parser matched the literal string "Discipline" and therefore silently excluded
-every modern article.
+My first version returned zero psychology articles. I tracked it down by dumping
+the raw taxonomy block from a few recent articles and just reading it. The tags
+were there, but the container around them had been renamed. PLOS labels each
+taxonomy block with a type attribute; older articles use "Discipline", newer ones
+use "Discipline-v3". My parser was matching the exact string "Discipline", so it
+quietly dropped every modern article.
 
-The remedy was to match any type beginning with "Discipline", covering both
-schema generations. The broader lesson, which recurred, is that PLOS's encoding
-is not stationary across fifteen years of publishing, so I validate structural
-assumptions against the corpus rather than a single exemplar.
+The fix was to match any type that starts with "Discipline", which covers both.
+The bigger lesson, which kept coming up, is that PLOS's encoding hasn't stayed put
+across fifteen years of publishing, so I check structural assumptions against the
+corpus instead of a single example.
 
 ## Problem B: subfield vocabulary mismatch
 
 The original plan named five target subfields: social, cognitive, developmental,
-clinical, and quantitative psychology. Cross-checking against the corpus surfaced
-two mismatches. PLOS's controlled vocabulary contains no term "Quantitative
-psychology", so that category would have matched nothing. Conversely, PLOS
-employs several subfields the plan did not list, including Experimental
-psychology, Psychometrics, Behavior, and Emotions.
+clinical, and quantitative psychology. Checking against the corpus turned up two
+mismatches. PLOS's controlled vocabulary has no "Quantitative psychology" term at
+all, so that one would have matched nothing. And PLOS uses several subfields the
+plan didn't list, like Experimental psychology, Psychometrics, Behavior, and
+Emotions.
 
-Rather than impose a preset list the taxonomy does not honor, I chose to include
-all subfields. The design accordingly became taxonomy-driven: I retain every
-article PLOS files under Psychology and record whichever subfield term PLOS
-assigned, irrespective of the original five. This is faithful to the field's own
-organization and lets me aggregate or subset by subfield later. In the finished
-corpus this yields 23 subfields rather than five:
+Instead of forcing a preset list the taxonomy doesn't honor, I decided to keep all
+the subfields. So the design became taxonomy-driven: I keep every article PLOS
+files under Psychology and record whatever subfield term PLOS gave it, regardless
+of the original five. That stays true to how the field organizes itself and lets
+me group or subset by subfield later. In the finished corpus that's 23 subfields,
+not five:
 
 Addiction, Applied psychology, Behavior, Cognitive psychology, Collective human
 behavior, Developmental psychology, Emotions, Experimental psychology, Gender
@@ -182,19 +180,18 @@ adjustment, Psychological attitudes, Psychological defense mechanisms,
 Psychological stress, Psychology (unspecified), Psychometrics, Psychophysics,
 Relaxation (psychology), Sexual identity, and Social psychology.
 
-The breadth is worth noting. Some of these are standard subfields (social,
-cognitive, developmental psychology), some are broad topic areas PLOS files under
-Psychology (Behavior, Emotions), and a few are narrow or tangential to
-human-participant research (Instinct, and animal-behavior work that PLOS still
-tags under Psychology). Whether to analyze all 23 or restrict to a defined core
-is one of the open questions at the end of this report.
+The range is worth noticing. Some are standard subfields (social, cognitive,
+developmental psychology), some are broad topic areas PLOS files under Psychology
+(Behavior, Emotions), and a few are narrow or barely about human participants at
+all (Instinct, plus animal-behavior work PLOS still tags under Psychology).
+Whether to analyze all 23 or narrow to a defined core is one of the open questions
+at the end.
 
 ## Problem C: the 2015 discontinuity
 
-With the taxonomy parsing correctly, I executed the full scan over all 391,000
-files and produced a first master index. A routine integrity check, tabulating
-the count of psychology articles per year, exposed a discontinuity that no
-plausible mechanism could explain as signal:
+With the taxonomy parsing correctly, I ran the full scan over all 391,000 files
+and built a first master index. A routine check, counting psychology articles per
+year, turned up a gap that no real-world mechanism could explain as signal:
 
 ```
 2014: 2,002 articles
@@ -202,20 +199,19 @@ plausible mechanism could explain as signal:
 2016: 2,100 articles
 ```
 
-A near-empty year bracketed by full ones is diagnostic of a defect, not a trend,
-so I investigated rather than proceeding.
+A near-empty year sitting between two full ones screams bug, not trend, so I dug
+in instead of moving on.
 
-My first hypothesis attributed the gap to date parsing: perhaps 2015 articles
-were being misdated and displaced into adjacent years. I falsified this by
-constructing a year histogram over all PLOS ONE articles regardless of subject,
-which showed 2015 fully populated with correctly dated articles. The articles
-existed and were dated; they were simply not being recognized as psychology.
+My first guess was date parsing: maybe 2015 articles were getting misdated and
+shoved into neighboring years. I ruled that out by building a year histogram over
+all PLOS ONE articles regardless of subject, which showed 2015 fully populated
+with correctly dated articles. The articles were there and dated fine; they just
+weren't being recognized as psychology.
 
-My second hypothesis localized the failure to subject detection in 2015. I
-instrumented a per-year comparison between the count of articles my parser tagged
-as psychology and the count whose raw tags merely contained the substring
-"psych" (the counts below are the values originally observed for that
-diagnostic):
+My second guess pinned it on subject detection in 2015. I set up a per-year
+comparison between how many articles my parser tagged as psychology and how many
+just had the substring "psych" somewhere in their raw tags (the counts below are
+what I saw at the time):
 
 ```
 year | total articles | tagged psychology | contains "psych"
@@ -224,11 +220,11 @@ year | total articles | tagged psychology | contains "psych"
 2016 |      435       |        35         |         35
 ```
 
-This was decisive. For 2015 even the naive substring search returned essentially
-nothing, which meant the articles carried no subject taxonomy at all rather than
-taxonomy in an unexpected shape. Serializing the raw taxonomy block of several
-2015 articles and tabulating the type attributes across the year confirmed it:
-almost every 2015 article contained only
+That settled it. For 2015 even the dumb substring search found basically nothing,
+which meant those articles had no subject taxonomy at all, not taxonomy in some
+weird shape. Dumping the raw taxonomy block from a bunch of 2015 articles and
+tallying the type attributes across the year confirmed it: almost every 2015
+article had only
 
 ```xml
 <article-categories>
@@ -238,42 +234,40 @@ almost every 2015 article contained only
 </article-categories>
 ```
 
-a bare document-class heading and no subject taxonomy whatever. The tally was
-unambiguous: of 561 sampled 2015 articles, 557 carried no subject tags in their
-distributed files, as did roughly 37% of 2013 articles.
+a bare document-class heading and no subject taxonomy whatsoever. The count was
+clear: of 561 sampled 2015 articles, 557 had no subject tags in their distributed
+files, and so did about 37% of 2013 articles.
 
-The finding is a property of the distributed data, not a coding defect. PLOS
-classified these articles in its production systems but, for that interval, never
-serialized the taxonomy into the downloadable files. A label that was never
-written cannot be read. Uncorrected, this would have voided most of 2015 and a
-substantial fraction of 2013, invalidating the Middle stage and any longitudinal
-trend crossing that interval.
+This is a property of the data PLOS ships, not a bug in my code. PLOS classified
+these articles in its own systems but, for that stretch, never wrote the taxonomy
+into the downloadable files. You can't read a label that was never written. Left
+uncorrected, this would have wiped out most of 2015 and a good chunk of 2013,
+which would blow up the Middle stage and any trend line crossing that stretch.
 
 ## The resolution: Solr for discovery
 
-The taxonomy is absent from the distributed files but not from PLOS itself. PLOS
-operates a Solr search index that holds the authoritative subject classification
-for every article, including those whose files omit it. I therefore inverted the
-architecture: use the search index to determine which articles qualify
-(discovery), and retain the local files solely for the full text the model must
-read. This division of labor, search index for discovery and local corpus for
-full text, is in fact the design the original plan proposed before I attempted
-the bulk-local shortcut.
+The taxonomy is missing from the files PLOS distributes, but not from PLOS itself.
+PLOS runs a Solr search index that has the real subject classification for every
+article, including the ones whose files leave it out. So I flipped the
+architecture around: use the search index to figure out which articles qualify
+(discovery), and keep the local files just for the full text the model has to
+read. That split, search index for discovery and local corpus for full text, is
+actually what the original plan proposed before I went for the bulk-local
+shortcut.
 
 ## Problem D: query construction
 
-Constructing a correct discovery query required two further corrections, each
-isolated by adding one constraint at a time and observing the result count.
+Getting the discovery query right took two more fixes, each of which I isolated by
+adding one constraint at a time and watching the result count.
 
-First, the index contains far more than whole articles; it also indexes
-constituent fragments such as sections and figures. Absent a specific filter,
-`doc_type:full`, the query returns several million such fragments rather than
-articles. Second, the constraints must be issued as strict filter queries. A
-loosely composed query is interpreted permissively by the endpoint and returns
-effectively the entire date range rather than the psychology subset.
+First, the index has way more than whole articles in it; it also indexes pieces
+like sections and figures. Without a specific `doc_type:full` filter, the query
+comes back with several million of those fragments instead of articles. Second,
+the constraints have to go in as strict filter queries. A loosely written query
+gets read loosely by the endpoint and hands back basically the whole date range
+instead of just the psychology subset.
 
-With both corrections applied, each successive constraint narrows the count
-coherently:
+With both fixes in, each constraint narrows the count sensibly:
 
 ```
 q=*:* only                  : 3,487,529   (all indexed units, incl. fragments)
@@ -284,7 +278,7 @@ q=*:* only                  : 3,487,529   (all indexed units, incl. fragments)
 + subject Psychology        :     4,346   (2015 psychology, recovered)
 ```
 
-The operative query is a conjunction of filters:
+The actual query is a bunch of filters AND-ed together:
 
 ```python
 filters = [
@@ -296,44 +290,43 @@ filters = [
 ]
 ```
 
-Under the search-index approach, 2015 recovered from 12 articles to 4,346. The
-index returns each subject as a full path, for instance /Biology and life
-sciences/Psychology/Cognitive psychology/Language, from which I read the subfield
-as the segment immediately following "Psychology", preserving the semantics of
-the earlier XML parser.
+With the search-index approach, 2015 jumped from 12 articles to 4,346. The index
+gives each subject as a full path, like /Biology and life
+sciences/Psychology/Cognitive psychology/Language, and I read the subfield off as
+the segment right after "Psychology", which keeps the same meaning as the earlier
+XML parser.
 
 ## Operational issues of note
 
-Two cluster-specific failures also arose, both of the kind that silently consume
-time when undocumented.
+Two cluster-specific problems came up too, both the kind that quietly eat your
+time when they aren't written down.
 
-Batch jobs repeatedly failed with a missing-dependency error despite the software
-being installed. The cause is that the conventional command for activating the
-software environment behaves differently inside a non-interactive batch job than
-in an interactive shell; it appeared to succeed but left the job bound to the
-wrong interpreter. I fixed it by invoking the correct interpreter by absolute
-path, bypassing activation.
+Batch jobs kept failing with a missing-dependency error even though the software
+was installed. Turned out the usual command for activating the software
+environment behaves differently inside a non-interactive batch job than in an
+interactive shell; it looked like it worked but left the job pointed at the wrong
+interpreter. I fixed it by calling the right interpreter by its absolute path and
+skipping activation entirely.
 
-Separately, a long-running preprocessing step launched in a terminal background
-was terminated whenever the connection dropped, because the web terminal tears
-down its process group at session end. I now submit that work as a scheduled job,
-which executes independently of any terminal. Both fixes are encoded in the run
-scripts.
+Separately, a long-running preprocessing step I kicked off in the background of a
+terminal kept getting killed whenever the connection dropped, because the web
+terminal tears down its process group when the session ends. Now I submit that
+work as a scheduled job so it runs on its own, independent of any terminal. Both
+fixes are baked into the run scripts.
 
 ## Data-quality handling
 
-The pipeline tolerates two defects observed in the corpus. One article file was
-truncated and unparseable; the scanner logs and skips it rather than aborting a
-multi-hour job over a single bad file out of 391,000. And roughly 6% of the
-articles returned by the search index, predominantly recent 2025 and 2026
-publications, are absent from the local file snapshot and thus have no retrievable
-full text; I flag these and exclude them from sampling so the pipeline never
-attempts to code an article it cannot read.
+The pipeline puts up with two problems I saw in the corpus. One article file was
+truncated and wouldn't parse; the scanner logs it and skips it rather than killing
+a multi-hour job over one bad file out of 391,000. And about 6% of the articles
+the search index returns, mostly recent 2025 and 2026 papers, aren't in the local
+file snapshot, so there's no full text to pull; I flag those and leave them out of
+sampling so the pipeline never tries to code an article it can't read.
 
 # The finished master index
 
-Under the search-index approach the per-year counts are continuous, with no
-residual gap:
+With the search-index approach the per-year counts are smooth, with no leftover
+gap:
 
 ```python
 total: 58,467 psychology articles
@@ -347,23 +340,22 @@ by stage:
   early: 13,947   middle: 18,087   covid: 14,784   post-covid: 11,649
 ```
 
-The lower 2010 count reflects PLOS ONE's smaller early publication volume, a
-genuine feature of the venue rather than an artifact. The 2026 count is partial
-because the year is incomplete.
+The lower 2010 count is just PLOS ONE publishing less back then, a real feature of
+the venue, not an artifact. The 2026 count is partial because the year isn't over.
 
 # Decision 2: the pilot sample
 
-Before committing to a full run, I exercise the model on a small batch whose
-output I adjudicate by hand. Two properties of the sampling design matter.
+Before committing to a full run, I try the model out on a small batch and check
+the output by hand. Two things about the sampling design matter.
 
-The sample is stratified rather than simple random. A simple random draw would be
-dominated by high-volume subfields such as social and cognitive psychology and
-might omit rarer ones entirely, whereas the point of the pilot is to probe the
-model across the full range of writing conventions. So I draw two articles from
-each subfield present in the index.
+The sample is stratified, not simple random. A plain random draw would be
+dominated by high-volume subfields like social and cognitive psychology and might
+skip the rarer ones entirely, but the whole point of the pilot is to poke the
+model across the full range of writing styles. So I take two articles from each
+subfield in the index.
 
-The draw is reproducible. It is seeded with a fixed value, so I can regenerate the
-identical sample, which is a precondition for a transparent, auditable process.
+The draw is reproducible. It's seeded with a fixed value, so I can regenerate the
+exact same sample, which is table stakes for anything transparent and auditable.
 
 ```python
 def stratified_sample(articles, per_subfield=2, seed=42):
@@ -376,12 +368,11 @@ def stratified_sample(articles, per_subfield=2, seed=42):
     return picked
 ```
 
-The realized sample comprises 46 articles spanning the 23 subfields listed
-earlier.
+The actual sample comes out to 46 articles across the 23 subfields listed earlier.
 
 # Decision 3: model selection
 
-The original plan offered two candidate models, of which I was to select one:
+The original plan gave me two candidate models to choose from:
 
 | | Mistral-7B | Llama-3.3-70B (selected) |
 |---|---|---|
@@ -389,54 +380,51 @@ The original plan offered two candidate models, of which I was to select one:
 | Structured-extraction accuracy | Lower; more prone to omission and fabrication | Higher; more reliable |
 | Compute cost | Modest; runs on limited hardware | Substantial; requires multiple high-end GPUs |
 
-I selected Llama-3.3-70B. Accuracy is the binding criterion, because an omitted
-or fabricated demographic value propagates directly into the reporting-rate
-estimates that constitute the study's output. Executing on Rivanna removes the
-compute-cost consideration that would otherwise favor the smaller model. The
-pilot exists precisely to test whether this selection is warranted before the
-full run.
+I went with Llama-3.3-70B. Accuracy is the deciding factor, because a missed or
+made-up demographic value feeds straight into the reporting-rate numbers that are
+the whole output of the study. Running on Rivanna takes compute cost off the
+table, which is the only thing that would push toward the smaller model. The pilot
+is there precisely to test whether that pick holds up before the full run.
 
 # Extraction mechanics
 
-I submit each article's text to the model with an instruction that fixes both the
-extraction targets and the output format:
+I hand each article's text to the model with an instruction that pins down both
+what to extract and the output format:
 
 ```text
 You are coding a psychology research article for a systematic review of
 demographic reporting. For EACH distinct participant sample, code the four
 demographics defined by the schema above (gender, race, education,
-socioeconomic status) — for each, whether it was reported and, where reported,
-its composition.
+socioeconomic status), and for each one, whether it was reported and, where
+reported, its breakdown.
 
 Respond with ONLY a JSON array, one element per sample, with these exact keys...
 ```
 
-Two safeguards constrain the output. It is schema-validated, so a response must
-be well-formed structured data carrying exactly the required fields; malformed
-output is rejected and flagged rather than silently admitted to the dataset. And
-I reorder the methods and participants sections to the front of the submitted
-text, since demographics are reported there, which concentrates the relevant
-signal near the start of the prompt for long articles.
+Two safeguards keep the output honest. It's schema-validated, so a response has to
+be well-formed structured data with exactly the required fields; anything
+malformed gets rejected and flagged instead of quietly slipping into the dataset.
+And I move the methods and participants sections to the front of the text I send,
+since that's where demographics live, which puts the useful signal near the start
+of the prompt for long articles.
 
 # Scaling the full run
 
-Executing 58,467 articles through a 70-billion-parameter model is
-compute-intensive. I partition the work into independent shards executed
-concurrently across many GPUs. Each shard writes its own output file, and the run
-is idempotent under restart: an interrupted shard skips the articles it has
-already completed and resumes, which is essential for multi-hour jobs subject to
-preemption.
+Pushing 58,467 articles through a 70-billion-parameter model is heavy. I split the
+work into independent shards that run at the same time across a lot of GPUs. Each
+shard writes its own output file, and the run is safe to restart: an interrupted
+shard skips the articles it already finished and picks up from there, which is
+essential for multi-hour jobs that can get preempted.
 
 # Aggregation and inference
 
-Given the completed demographics table, the final stage computes, for each
-demographic and each year, and separately for each of the four stages, two
-quantities. The reporting rate is the proportion of samples reporting a given
-demographic. The mean composition is, for example, the average percentage female
-among samples that reported gender. Tracing these across 2010 to 2026 constitutes
-the study's answer: whether demographic reporting in psychology is improving, and
-how the trajectory differs across the early, middle, COVID, and post-COVID
-periods.
+Once the demographics table is done, the last stage computes two things for each
+demographic, for each year, and separately for each of the four stages. The
+reporting rate is the share of samples that report a given demographic. The mean
+composition is, for instance, the average percentage female among the samples that
+reported gender. Tracking those from 2010 to 2026 is the study's answer: whether
+demographic reporting in psychology is getting better, and how the path differs
+across the early, middle, COVID, and post-COVID periods.
 
 # Status
 
@@ -451,8 +439,8 @@ periods.
 
 # Reproducibility
 
-All code and documentation is version-controlled on GitHub (repository
-SJ-Jain-systems/Halle). Each stage is an independent, testable module:
+All the code and docs are version-controlled on GitHub (SJ-Jain-systems/Halle).
+Each stage is its own testable module:
 
 ```
 src/
@@ -472,28 +460,26 @@ scripts/                  the diagnostics that isolated the 2015 gap and more
 tests/                    33 automated tests over the non-model logic
 ```
 
-Two points bear emphasis for anyone auditing the work. The non-model logic is
-covered by 33 automated tests spanning parsing, filtering, sampling, and
-aggregation; the model itself is validated by manual adjudication of the pilot.
-And the diagnostic scripts that isolated the schema drift and the 2015 gap are
-retained in the repository, so the evidentiary basis for each design decision
-remains inspectable.
+Two things worth flagging for anyone auditing this. The non-model logic is covered
+by 33 automated tests across parsing, filtering, sampling, and aggregation; the
+model itself gets checked by hand-coding the pilot. And the diagnostic scripts
+that pinned down the schema drift and the 2015 gap are still in the repo, so the
+evidence behind each design call is there to inspect.
 
 # Open questions
 
-Three decisions would benefit from input before the full run.
+Three calls would benefit from a second opinion before the full run.
 
-1. Subfield scope. The taxonomy yields 23 psychology subfields, some broad
-   (Behavior, Emotions) and some tangential to human-participant research (for
-   example animal-behavior work filed under Psychology, or Instinct). Do I
-   analyze all 23, or restrict to a defined core of human-participant subfields,
-   and if so which?
+1. Subfield scope. The taxonomy gives 23 psychology subfields, some broad
+   (Behavior, Emotions) and some barely about human participants (say
+   animal-behavior work filed under Psychology, or Instinct). Do I analyze all 23,
+   or narrow to a defined core of human-participant subfields, and if so which?
 
-2. Coverage at the interval boundaries. Pre-2011 articles use the older tagging
-   generation, and a fraction of 2025 to 2026 articles lack local full text. Are
-   the earliest and latest years complete enough to support a fair longitudinal
-   comparison, or should I bound the analysis window (for example 2011 to 2024)?
+2. Coverage at the edges. Pre-2011 articles use the older tagging generation, and
+   some 2025 to 2026 articles have no local full text. Are the earliest and latest
+   years complete enough for a fair long-term comparison, or should I bound the
+   window (say 2011 to 2024)?
 
-3. Validation threshold. What level of pilot accuracy, measured against the
-   scoring rubric, justifies proceeding to the full run, and who performs the
-   manual adjudication?
+3. Validation threshold. How accurate does the pilot have to be, measured against
+   the scoring rubric, to justify going ahead with the full run, and who does the
+   hand-coding?

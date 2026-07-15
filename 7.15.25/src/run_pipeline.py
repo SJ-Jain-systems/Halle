@@ -1,16 +1,16 @@
-"""Full-scale demographic extraction over the entire filtered corpus
-(brief items 1-2: this is what actually answers the research question, as
-opposed to src/run_pilot.py which only covers the 46-article pilot).
+"""Run the full extraction over the whole filtered corpus (this is the part that
+actually answers the research question, brief items 1 and 2, versus
+src/run_pilot.py which only does the 46-article pilot).
 
-Reads data/corpus_index.csv (src/build_corpus_index.py), runs every article
-through the single chosen model (docs/DECISIONS.md #3,
-meta-llama/Llama-3.3-70B-Instruct by default, from config.yaml), and appends
-one row per extracted sample to an output CSV.
+It reads data/corpus_index.csv (from src/build_corpus_index.py), runs every
+article through our one model (docs/DECISIONS.md #3, meta-llama/Llama-3.3-70B-Instruct
+by default, pulled from config.yaml), and appends one row per extracted sample to
+an output CSV.
 
-Designed to run as a SLURM array job (slurm/run_pipeline.slurm): pass
---shard-index/--shard-count to have each array task process a disjoint slice
-of the index. Safe to re-run — articles already present in the output CSV
-are skipped, so a killed/preempted job just picks up where it left off.
+It's built to run as a SLURM array job (slurm/run_pipeline.slurm): pass
+--shard-index/--shard-count so each array task chews through its own slice of the
+index. Safe to re-run, since articles already in the output CSV get skipped, so a
+killed or preempted job just picks up where it left off.
 
 Usage:
     python -m src.run_pipeline --index data/corpus_index.csv \\
@@ -102,9 +102,9 @@ def run(
                 continue
 
             for sample in samples:
-                # Serialize dict-valued fields to JSON text so they round-trip
-                # cleanly through CSV (csv.writer would otherwise fall back to
-                # Python repr(), which json.loads() can't parse back).
+                # Turn the dict fields into JSON text so they survive a round-trip
+                # through CSV. Otherwise csv.writer falls back to Python's repr()
+                # and json.loads() can't read it back.
                 sample = {
                     **sample,
                     "gender_pct": json.dumps(sample.get("gender_pct") or {}),

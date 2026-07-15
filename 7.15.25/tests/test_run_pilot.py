@@ -29,8 +29,8 @@ def _valid_row(doi):
 
 
 class CountingClient:
-    """Parses the DOI out of the prompt and returns a valid row for it; records
-    every generate() call and can be told to raise for specific DOIs."""
+    """Pulls the DOI out of the prompt and echoes back a valid row. Keeps a list
+    of every generate() call, and can be told to blow up for certain DOIs."""
 
     def __init__(self, model_id, raise_for=()):
         self.model_id = model_id
@@ -111,8 +111,8 @@ def test_resume_skips_already_ok_articles(tmp_path):
     run_pilot(str(sample_csv), MODEL, client_factory=lambda m: first, results_dir=str(results_dir))
     assert first.calls == [DOI]
 
-    # Second run: the article is already "ok", so generate() must not be called
-    # again (and the model client need never even be built).
+    # Second run: the article is already "ok", so we shouldn't call generate()
+    # again (and we shouldn't even build the client).
     second = CountingClient(MODEL)
     run_pilot(str(sample_csv), MODEL, client_factory=lambda m: second, results_dir=str(results_dir))
     assert second.calls == []
@@ -140,8 +140,8 @@ def test_generic_error_is_recorded_and_run_continues(tmp_path):
     _write_sample_csv(sample_csv, dois=[d1, d2])
     results_dir = tmp_path / "results"
 
-    # d1 raises a non-validation error; the run must not abort, and d2 must still
-    # be processed.
+    # d1 blows up with a non-validation error. The run should keep going and
+    # still do d2.
     client = CountingClient(MODEL, raise_for=[d1])
     run_pilot(str(sample_csv), MODEL, client_factory=lambda m: client, results_dir=str(results_dir))
 

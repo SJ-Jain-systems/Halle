@@ -39,14 +39,14 @@ def test_perfect_match_scores_full_marks():
 
 def test_flipped_flag_and_wrong_pct_are_penalized():
     gold = [gold_row(race_reported=1, race_pct={"white": 100})]
-    # gender flag flipped (1 -> 0); race pct wrong (100 -> 50).
+    # gender flag flipped from 1 to 0; race pct wrong, 100 vs 50.
     model = model_payload(
         [gold_row(gender_reported=0, race_reported=1, race_pct={"white": 50})]
     )
     per_doi, summary = score(gold, model)
     # 3 of 4 reporting flags correct (gender wrong).
     assert summary["reporting_flag_accuracy"] == 0.75
-    # Only race is numerically comparable (gender no longer both-reported); wrong.
+    # only race can be compared numerically now (gender isn't reported by both), and it's wrong.
     assert summary["numeric_accuracy"] == 0.0
 
 
