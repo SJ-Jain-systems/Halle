@@ -1,5 +1,11 @@
-"""Draw the 10-article pilot sample (docs/DECISIONS.md #2) from the local
-corpus index built by src/build_corpus_index.py. No network calls.
+"""Draw the pilot sample (docs/DECISIONS.md #2 — 100 articles by default, per
+the 7/15 meeting) from the local corpus index built by
+src/build_corpus_index.py. No network calls.
+
+The sample guarantees a floor of `min_per_subfield` articles from every
+psychology subfield present (so no subfield is missed), then tops up to
+`total_size` total by allocating the remaining slots proportionally to each
+subfield's article count.
 
 Usage:
     python -m src.sample_articles --index data/corpus_index.csv --out data/sampled_articles.csv
@@ -11,6 +17,8 @@ import csv
 import logging
 import os
 import random
+
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -44,48 +52,112 @@ def distinct_subfields(rows: list[dict]) -> list[str]:
     return seen
 
 
+def _candidates_for(rows: list[dict], subfield: str) -> list[dict]:
+    return [
+        r for r in rows
+        if subfield in [s.strip() for s in r.get("matched_subfields", "").split(";")]
+    ]
+
+
+def _largest_remainder_alloc(remaining: int, capacity: dict[str, int]) -> dict[str, int]:
+    """Distribute `remaining` slots across subfields proportionally to
+    `capacity` (spare articles available), capped by capacity, using
+    largest-remainder rounding. Deterministic given the capacity dict order."""
+    alloc = {sf: 0 for sf in capacity}
+    total_cap = sum(capacity.values())
+    remaining = min(remaining, total_cap)
+    if remaining <= 0 or total_cap == 0:
+        return alloc
+
+    quotas = {sf: remaining * capacity[sf] / total_cap for sf in capacity}
+    for sf in capacity:
+        alloc[sf] = min(int(quotas[sf]), capacity[sf])
+    leftover = remaining - sum(alloc.values())
+    # Hand out the leftover by largest fractional remainder, skipping any
+    # subfield already at capacity.
+    by_remainder = sorted(capacity, key=lambda sf: quotas[sf] - int(quotas[sf]), reverse=True)
+    while leftover > 0:
+        progressed = False
+        for sf in by_remainder:
+            if leftover <= 0:
+                break
+            if alloc[sf] < capacity[sf]:
+                alloc[sf] += 1
+                leftover -= 1
+                progressed = True
+        if not progressed:
+            break
+    return alloc
+
+
 def stratified_sample(
     rows: list[dict],
     subfields: list[str] | None = None,
     per_subfield: int = 2,
     seed: int = 42,
+    total_size: int | None = None,
+    min_per_subfield: int | None = None,
 ) -> list[dict]:
-    """Randomly select `per_subfield` articles from each subfield.
+    """Stratified pilot draw over psychology subfields.
 
     `rows` is a list of dicts as produced by build_corpus_index.py (each with
     a `matched_subfields` field of ';'-joined subfield names) — passed in
     directly rather than read from disk here, so this is trivially
     unit-testable with fixture rows (tests/test_sample_articles.py).
 
-    When `subfields` is None (the default, used by the CLI), the subfields are
-    taken from whatever the index actually contains, and any subfield with
-    fewer than `per_subfield` articles is skipped with a warning — this keeps
-    the pilot representative across *all* psychology subfields PLOS uses
-    without a hardcoded list. When `subfields` is given explicitly, a subfield
-    short on candidates is an error instead.
+    Two modes:
+
+    - `total_size is None` (legacy): take exactly `per_subfield` from every
+      eligible subfield — 2×N articles for N subfields.
+    - `total_size` set: guarantee a floor of `min_per_subfield` (defaults to
+      `per_subfield`) from every eligible subfield, then top up to `total_size`
+      total by allocating the remaining slots proportionally to each subfield's
+      article count (largest-remainder rounding). If the floors alone already
+      exceed `total_size`, coverage wins and the floor sample is returned.
+
+    When `subfields` is None (the default, used by the CLI), subfields are taken
+    from whatever the index contains, and any subfield with fewer than the floor
+    is skipped with a warning — keeping the pilot representative across *all*
+    psychology subfields PLOS uses without a hardcoded list. When `subfields` is
+    given explicitly, a subfield short on candidates is an error instead.
     """
     rng = random.Random(seed)
     auto = subfields is None
     if auto:
         subfields = distinct_subfields(rows)
-    sampled: list[dict] = []
+    floor = min_per_subfield if min_per_subfield is not None else per_subfield
+
+    # A deterministic shuffled candidate order per eligible subfield; we take
+    # prefixes of these (floor first, then any top-up), so one shuffle drives
+    # both draws and the result stays reproducible for a given seed.
+    order: dict[str, list[dict]] = {}
     for subfield in subfields:
-        candidates = [
-            r for r in rows
-            if subfield in [s.strip() for s in r.get("matched_subfields", "").split(";")]
-        ]
-        if len(candidates) < per_subfield:
+        candidates = _candidates_for(rows, subfield)
+        if len(candidates) < floor:
             if auto:
                 logger.warning(
                     "Skipping subfield %r: only %d article(s), need %d",
-                    subfield, len(candidates), per_subfield,
+                    subfield, len(candidates), floor,
                 )
                 continue
             raise ValueError(
                 f"Only {len(candidates)} candidates found for {subfield!r}, "
-                f"need at least {per_subfield}. Has src/build_corpus_index.py run yet?"
+                f"need at least {floor}. Has src/build_corpus_index.py run yet?"
             )
-        for doc in rng.sample(candidates, per_subfield):
+        pool = list(candidates)
+        rng.shuffle(pool)
+        order[subfield] = pool
+
+    taken = {sf: floor for sf in order}
+    if total_size is not None:
+        remaining = total_size - sum(taken.values())
+        capacity = {sf: len(order[sf]) - floor for sf in order}
+        for sf, extra in _largest_remainder_alloc(remaining, capacity).items():
+            taken[sf] += extra
+
+    sampled: list[dict] = []
+    for subfield, pool in order.items():
+        for doc in pool[: taken[subfield]]:
             row = dict(doc)
             row["subfield"] = subfield
             sampled.append(row)
@@ -111,20 +183,49 @@ def filter_to_local_xml(rows: list[dict]) -> list[dict]:
     return kept
 
 
+def _sampling_config(config_path: str) -> dict:
+    """Pilot size / floor / seed defaults from config.yaml (validation +
+    sampling blocks), falling back to hardcoded defaults if absent."""
+    defaults = {"pilot_size": 100, "min_per_subfield": 2, "seed": 42}
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+    except OSError:
+        return defaults
+    validation = config.get("validation") or {}
+    sampling = config.get("sampling") or {}
+    return {
+        "pilot_size": validation.get("pilot_size", defaults["pilot_size"]),
+        "min_per_subfield": validation.get("min_per_subfield", defaults["min_per_subfield"]),
+        "seed": sampling.get("seed", defaults["seed"]),
+    }
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--index", default="data/corpus_index.csv")
     parser.add_argument("--out", default="data/sampled_articles.csv")
-    parser.add_argument("--per-subfield", type=int, default=2)
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--config", default="config.yaml")
+    parser.add_argument("--size", type=int, default=None,
+                        help="Total pilot size (default: config validation.pilot_size)")
+    parser.add_argument("--min-per-subfield", type=int, default=None,
+                        help="Floor drawn from each subfield (default: config validation.min_per_subfield)")
+    parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
 
+    cfg = _sampling_config(args.config)
+    size = args.size if args.size is not None else cfg["pilot_size"]
+    floor = args.min_per_subfield if args.min_per_subfield is not None else cfg["min_per_subfield"]
+    seed = args.seed if args.seed is not None else cfg["seed"]
+
     rows = filter_to_local_xml(load_index(args.index))
-    articles = stratified_sample(rows, per_subfield=args.per_subfield, seed=args.seed)
+    articles = stratified_sample(
+        rows, per_subfield=floor, min_per_subfield=floor, total_size=size, seed=seed
+    )
     write_csv(articles, args.out)
     subfields_covered = sorted({a["subfield"] for a in articles})
-    print(f"Wrote {len(articles)} articles to {args.out}")
+    print(f"Wrote {len(articles)} articles to {args.out} (target {size}, floor {floor}/subfield)")
     print(f"Covered {len(subfields_covered)} subfields: {', '.join(subfields_covered)}")
 
 

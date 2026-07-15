@@ -17,16 +17,20 @@ def _valid_row(doi):
     return {
         "doi": doi,
         "sample_id": 1,
-        "gender": {"reported": 0, "pct": {}},
-        "race": {"reported": 0, "pct": {}},
-        "education": {"reported": 0, "pct": {}},
-        "ses": {"reported": 0, "value": None},
+        "gender_reported": 0,
+        "gender_pct": {},
+        "race_reported": 0,
+        "race_pct": {},
+        "education_reported": 0,
+        "education_pct": {},
+        "ses_reported": 0,
+        "ses_value": None,
     }
 
 
 class CountingClient:
-    """Parses the DOI out of the prompt and returns a valid row for it; records
-    every generate() call and can be told to raise for specific DOIs."""
+    """Reads the DOI out of the prompt and returns a valid row. Records every
+    generate() call, and can be told to raise for certain DOIs."""
 
     def __init__(self, model_id, raise_for=()):
         self.model_id = model_id
@@ -66,10 +70,14 @@ class FakeClient:
                 {
                     "doi": DOI,
                     "sample_id": 1,
-                    "gender": {"reported": 1, "pct": {"male": 45, "female": 55, "other": 0}},
-                    "race": {"reported": 1, "pct": {"white": 60, "black": 20, "hispanic": 10, "asian": 5, "other": 5}},
-                    "education": {"reported": 0, "pct": {}},
-                    "ses": {"reported": 0, "value": None},
+                    "gender_reported": 1,
+                    "gender_pct": {"male": 45, "female": 55, "other": 0},
+                    "race_reported": 1,
+                    "race_pct": {"white": 60, "black": 20, "hispanic": 10, "asian": 5, "other": 5},
+                    "education_reported": 0,
+                    "education_pct": {},
+                    "ses_reported": 0,
+                    "ses_value": None,
                 }
             ]
         )
@@ -103,8 +111,8 @@ def test_resume_skips_already_ok_articles(tmp_path):
     run_pilot(str(sample_csv), MODEL, client_factory=lambda m: first, results_dir=str(results_dir))
     assert first.calls == [DOI]
 
-    # Second run: the article is already "ok", so generate() must not be called
-    # again (and the model client need never even be built).
+    # Second run: the article is already "ok", so we shouldn't call generate()
+    # again (and we shouldn't even build the client).
     second = CountingClient(MODEL)
     run_pilot(str(sample_csv), MODEL, client_factory=lambda m: second, results_dir=str(results_dir))
     assert second.calls == []
@@ -132,8 +140,8 @@ def test_generic_error_is_recorded_and_run_continues(tmp_path):
     _write_sample_csv(sample_csv, dois=[d1, d2])
     results_dir = tmp_path / "results"
 
-    # d1 raises a non-validation error; the run must not abort, and d2 must still
-    # be processed.
+    # d1 raises a non-validation error. The run should keep going and still
+    # process d2.
     client = CountingClient(MODEL, raise_for=[d1])
     run_pilot(str(sample_csv), MODEL, client_factory=lambda m: client, results_dir=str(results_dir))
 
@@ -148,7 +156,7 @@ def test_echo_backend_generates_schema_valid_output():
     raw = client.generate(f"...\nArticle DOI: {doi}\n\nArticle text:\nblah")
     rows = parse_and_validate(raw, expected_doi=doi)  # would raise if malformed
     assert rows[0]["doi"] == doi
-    assert rows[0]["gender"] == {"reported": 0, "pct": {}}
+    assert rows[0]["gender_reported"] == 0
 
 
 def test_run_pilot_end_to_end_with_echo_backend(tmp_path):

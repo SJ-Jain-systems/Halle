@@ -209,10 +209,11 @@ existed and were dated; they were simply not being recognized as psychology.
 My second hypothesis localized the failure to subject detection in 2015. I
 instrumented a per-year comparison between the count of articles my parser tagged
 as psychology and the count whose raw tags merely contained the substring
-"psycholog":
+"psych" (the counts below are the values originally observed for that
+diagnostic):
 
 ```
-year | total articles | tagged psychology | contains "psycholog"
+year | total articles | tagged psychology | contains "psych"
 2014 |      594       |        37         |         38
 2015 |      561       |         1         |          1
 2016 |      435       |        35         |         35
@@ -397,11 +398,10 @@ extraction targets and the output format:
 
 ```text
 You are coding a psychology research article for a systematic review of
-demographic reporting. For EACH distinct participant sample, extract:
- - gender: reported? (0/1) and percentage breakdown (male/female/other)
- - race:   reported? (0/1) and percentage breakdown (white/black/hispanic/asian/other)
- - education: reported? (0/1) and percentage with vs. without college
- - socioeconomic status: 0 = not reported, 1 = words only, 2 = a specific number
+demographic reporting. For EACH distinct participant sample, code the four
+demographics defined by the schema above (gender, race, education,
+socioeconomic status) — for each, whether it was reported and, where reported,
+its composition.
 
 Respond with ONLY a JSON array, one element per sample, with these exact keys...
 ```

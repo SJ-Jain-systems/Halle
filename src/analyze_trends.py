@@ -14,50 +14,49 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import os
 
 import pandas as pd
 
-CATEGORIES = {
-    "gender": ("gender_reported", "gender_pct"),
-    "race": ("race_reported", "race_pct"),
-    "education": ("education_reported", "education_pct"),
-}
+from src.extract_demographics import PCT_FIELDS, parse_field
+
+CATEGORIES = PCT_FIELDS  # gender, race, education
 STAGE_ORDER = ["early", "middle", "covid", "post_covid"]
 
 
 def load_table(table_csv: str) -> pd.DataFrame:
+    """Read the demographics table, parsing each combined demographic column
+    (e.g. gender "1, 60% Male, 40% Female") back into its {"reported", "pct"}
+    / {"reported", "value"} dict via extract_demographics.parse_field."""
     df = pd.read_csv(table_csv)
-    for _, pct_col in CATEGORIES.values():
-        df[pct_col] = df[pct_col].apply(_safe_json_loads)
+    for name in CATEGORIES:
+        df[name] = df[name].apply(lambda v, n=name: parse_field(n, v))
+    df["ses"] = df["ses"].apply(lambda v: parse_field("ses", v))
     return df
 
 
-def _safe_json_loads(value):
-    if isinstance(value, dict):
-        return value
-    try:
-        return json.loads(value)
-    except (TypeError, ValueError):
-        return {}
+def _reported_flag(value) -> int:
+    return int((value or {}).get("reported") or 0)
 
 
-def reporting_rate(df: pd.DataFrame, reported_col: str, group_col: str) -> pd.DataFrame:
+def reporting_rate(df: pd.DataFrame, category: str, group_col: str) -> pd.DataFrame:
+    flags = df[category].apply(lambda v: _reported_flag(v) == 1)
+    tmp = pd.DataFrame({group_col: df[group_col], "reported": flags})
     return (
-        df.groupby(group_col)[reported_col]
-        .apply(lambda s: 100 * (s == 1).sum() / len(s))
+        tmp.groupby(group_col)["reported"]
+        .apply(lambda s: 100 * s.sum() / len(s))
         .rename("reporting_rate_pct")
         .reset_index()
     )
 
 
-def mean_subgroup_pct(df: pd.DataFrame, reported_col: str, pct_col: str, group_col: str) -> pd.DataFrame:
-    reported = df[df[reported_col] == 1]
+def mean_subgroup_pct(df: pd.DataFrame, category: str, group_col: str) -> pd.DataFrame:
     records = []
-    for _, row in reported.iterrows():
-        pct_dict = row[pct_col] or {}
-        for subgroup, pct_value in pct_dict.items():
+    for _, row in df.iterrows():
+        field = row[category] or {}
+        if field.get("reported") != 1:
+            continue
+        for subgroup, pct_value in (field.get("pct") or {}).items():
             records.append({group_col: row[group_col], "subgroup": subgroup, "pct": pct_value})
     if not records:
         return pd.DataFrame(columns=[group_col, "subgroup", "mean_pct", "n"])
@@ -81,15 +80,15 @@ def run(table_csv: str, out_dir: str, make_plots: bool = True) -> None:
     os.makedirs(out_dir, exist_ok=True)
     df = load_table(table_csv)
 
-    for category, (reported_col, pct_col) in CATEGORIES.items():
+    for category in CATEGORIES:
         for group_col in ("year", "stage"):
-            rate_df = reporting_rate(df, reported_col, group_col)
+            rate_df = reporting_rate(df, category, group_col)
             if group_col == "stage":
                 rate_df = order_stage_column(rate_df)
             rate_path = os.path.join(out_dir, f"{category}_reporting_rate_by_{group_col}.csv")
             rate_df.to_csv(rate_path, index=False)
 
-            mean_df = mean_subgroup_pct(df, reported_col, pct_col, group_col)
+            mean_df = mean_subgroup_pct(df, category, group_col)
             if group_col == "stage":
                 mean_df = order_stage_column(mean_df)
             mean_path = os.path.join(out_dir, f"{category}_mean_pct_by_{group_col}.csv")
@@ -101,9 +100,11 @@ def run(table_csv: str, out_dir: str, make_plots: bool = True) -> None:
 
     # SES uses a 0/1/2 reporting-detail scale rather than reported/not, so it
     # gets its own summary instead of reusing reporting_rate()/mean_subgroup_pct().
+    ses_level = df["ses"].apply(_reported_flag)
     for group_col in ("year", "stage"):
         ses_df = (
-            df.groupby(group_col)["ses_reported"]
+            pd.DataFrame({group_col: df[group_col], "ses_reported": ses_level})
+            .groupby(group_col)["ses_reported"]
             .value_counts(normalize=True)
             .rename("share")
             .mul(100)

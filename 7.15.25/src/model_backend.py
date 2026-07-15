@@ -1,18 +1,18 @@
-"""Local GPU inference backends for Rivanna, where compute isn't the
-constraint — no hosted API, no rate limits. All implement the ModelClient
-interface from src/extract_demographics.py (a `.generate(prompt) -> str`
-method), so any drops straight into extract_demographics()/run_pilot.py/run_pipeline.py.
+"""Model backends for running inference locally on Rivanna, where GPUs are the
+point (no hosted API, no rate limits). They all implement the same small
+ModelClient interface from src/extract_demographics.py (a .generate(prompt)
+method that returns a string), so any of them slots straight into
+extract_demographics()/run_pilot.py/run_pipeline.py.
 
-vLLM is the recommended path for anything beyond the 46-article pilot: it
-batches requests and uses paged attention, which matters once you're running
-the full filtered corpus. The transformers backend is a simpler fallback for
-small allocations or debugging on a single GPU. The `echo` backend loads no
-model at all — a GPU-free dry-run to validate the pipeline wiring before
-requesting a GPU allocation (see EchoModelClient).
+Use vLLM for anything past the 46-article pilot: it batches requests and uses
+paged attention, which starts to matter once you're processing the whole corpus.
+The transformers backend is a simpler fallback for small allocations or debugging
+on a single GPU. The echo backend loads no model at all; it's a GPU-free dry-run
+for checking the wiring before you request a GPU allocation (see EchoModelClient).
 
-Neither backend has been exercised in this sandbox (no GPU, no model
-weights, no network to huggingface.co) — see docs/RUNNING_ON_RIVANNA.md for
-how to validate this on an actual Rivanna GPU node before trusting output.
+Note: none of the GPU backends have run in this sandbox (no GPU, no weights, no
+network to huggingface.co), so see docs/RUNNING_ON_RIVANNA.md for how to validate
+them on a real Rivanna node before trusting the output.
 """
 from __future__ import annotations
 
@@ -21,16 +21,16 @@ import re
 from dataclasses import dataclass, field
 
 DEFAULT_MAX_NEW_TOKENS = 2048
-DEFAULT_TEMPERATURE = 0.0  # deterministic extraction, not creative generation
+DEFAULT_TEMPERATURE = 0.0  # we want deterministic extraction, not creativity
 
 
 @dataclass
 class VLLMModelClient:
-    """Batch-oriented local inference via vLLM's offline LLM API.
+    """Batched local inference through vLLM's offline LLM API.
 
-    tensor_parallel_size should match the number of GPUs requested in the
-    SLURM job (see slurm/run_pipeline.slurm) — e.g. 4 for a 70B model split
-    across 4x A100-80GB.
+    Set tensor_parallel_size to the number of GPUs you asked for in the SLURM job
+    (see slurm/run_pipeline.slurm), e.g. 4 for a 70B model split across four
+    A100-80GBs.
     """
 
     model_id: str
@@ -42,7 +42,7 @@ class VLLMModelClient:
 
     def _load(self):
         if self._llm is None:
-            from vllm import LLM  # deferred: heavy import, GPU-only
+            from vllm import LLM  # imported here since it's heavy and GPU-only
 
             self._llm = LLM(
                 model=self.model_id,
@@ -60,19 +60,19 @@ class VLLMModelClient:
         llm = self._load()
         params = SamplingParams(temperature=self.temperature, max_tokens=self.max_new_tokens)
         outputs = llm.generate(prompts, params)
-        # vLLM does not guarantee output order matches input order; sort by
-        # the prompt's original request index it attaches internally.
+        # vLLM doesn't guarantee the outputs come back in the order we sent them,
+        # so sort by the request index it attaches.
         outputs = sorted(outputs, key=lambda o: o.request_id)
         return [o.outputs[0].text for o in outputs]
 
 
 @dataclass
 class TransformersModelClient:
-    """Simpler single-process fallback via Hugging Face `transformers`.
+    """Simpler single-process fallback using Hugging Face transformers.
 
-    Loads the model once per process with device_map="auto" (splits across
-    all visible GPUs automatically). Fine for the 46-article pilot; for a
-    full-corpus run prefer VLLMModelClient's batching.
+    Loads the model once per process with device_map="auto" (it spreads across
+    whatever GPUs it can see). Fine for the 46-article pilot; for the full run
+    you want vLLM's batching instead.
     """
 
     model_id: str
@@ -83,7 +83,7 @@ class TransformersModelClient:
     def _load(self):
         if self._pipeline is None:
             import torch
-            from transformers import pipeline  # deferred: heavy import
+            from transformers import pipeline  # imported here since it's heavy
 
             self._pipeline = pipeline(
                 "text-generation",
@@ -111,14 +111,14 @@ _DOI_IN_PROMPT = re.compile(r"Article DOI:\s*(\S+)")
 
 @dataclass
 class EchoModelClient:
-    """GPU-free dry-run backend: loads no model and needs no network.
+    """GPU-free dry-run backend: no model, no network.
 
-    Returns a schema-valid "all not reported" response for whatever DOI the
-    prompt carries (extract_demographics.EXTRACTION_PROMPT_TEMPLATE emits an
-    `Article DOI: <doi>` line). This lets `run_pilot`/`run_pipeline` exercise the
-    whole path — CSV load, XML read, prompt build, parse/validate, JSON write —
-    on the login node before requesting GPUs. Output is a wiring check, NOT a
-    real extraction.
+    It returns a schema-valid "nothing reported" answer for whatever DOI is in the
+    prompt (extract_demographics.EXTRACTION_PROMPT_TEMPLATE writes an
+    "Article DOI: <doi>" line). That's enough to run the whole path (read the CSV,
+    read the XML, build the prompt, parse and validate, write the JSON) on the
+    login node before you request GPUs. It's a wiring check, not a real
+    extraction.
     """
 
     model_id: str
@@ -134,10 +134,14 @@ class EchoModelClient:
         row = {
             "doi": doi,
             "sample_id": 1,
-            "gender": {"reported": 0, "pct": {}},
-            "race": {"reported": 0, "pct": {}},
-            "education": {"reported": 0, "pct": {}},
-            "ses": {"reported": 0, "value": None},
+            "gender_reported": 0,
+            "gender_pct": {},
+            "race_reported": 0,
+            "race_pct": {},
+            "education_reported": 0,
+            "education_pct": {},
+            "ses_reported": 0,
+            "ses_value": None,
         }
         return json.dumps([row])
 

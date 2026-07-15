@@ -1,16 +1,16 @@
-"""Full-scale demographic extraction over the entire filtered corpus
-(brief items 1-2: this is what actually answers the research question, as
-opposed to src/run_pilot.py which only covers the 46-article pilot).
+"""Run the full extraction over the whole filtered corpus (this is the part that
+actually answers the research question, brief items 1 and 2, versus
+src/run_pilot.py which only does the 46-article pilot).
 
-Reads data/corpus_index.csv (src/build_corpus_index.py), runs every article
-through the single chosen model (docs/DECISIONS.md #3,
-meta-llama/Llama-3.3-70B-Instruct by default, from config.yaml), and appends
-one row per extracted sample to an output CSV.
+It reads data/corpus_index.csv (from src/build_corpus_index.py), runs every
+article through our one model (docs/DECISIONS.md #3, meta-llama/Llama-3.3-70B-Instruct
+by default, pulled from config.yaml), and appends one row per extracted sample to
+an output CSV.
 
-Designed to run as a SLURM array job (slurm/run_pipeline.slurm): pass
---shard-index/--shard-count to have each array task process a disjoint slice
-of the index. Safe to re-run — articles already present in the output CSV
-are skipped, so a killed/preempted job just picks up where it left off.
+It's built to run as a SLURM array job (slurm/run_pipeline.slurm): pass
+--shard-index/--shard-count so each array task processes its own slice of the
+index. Safe to re-run, since articles already in the output CSV are skipped, so a
+killed or preempted job just resumes where it left off.
 
 Usage:
     python -m src.run_pipeline --index data/corpus_index.csv \\
@@ -20,16 +20,13 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import logging
 import os
 
 import yaml
 
-from src.extract_demographics import (
-    ExtractionValidationError,
-    extract_demographics_from_xml,
-    format_field,
-)
+from src.extract_demographics import ExtractionValidationError, extract_demographics_from_xml
 from src.model_backend import build_client
 
 logger = logging.getLogger(__name__)
@@ -45,10 +42,14 @@ OUTPUT_FIELDS = [
     "year",
     "stage",
     "lead_institution",
-    "gender",
-    "race",
-    "education",
-    "ses",
+    "gender_reported",
+    "gender_pct",
+    "race_reported",
+    "race_pct",
+    "education_reported",
+    "education_pct",
+    "ses_reported",
+    "ses_value",
 ]
 
 
@@ -101,16 +102,14 @@ def run(
                 continue
 
             for sample in samples:
-                # Flatten each combined demographic into one human-readable
-                # column, e.g. gender -> "1, 60% Male, 40% Female" (0 = not
-                # reported). analyze_trends/score_pilot parse this back via
-                # extract_demographics.parse_field.
+                # Serialize the dict fields to JSON text so they survive a
+                # round-trip through CSV. Otherwise csv.writer falls back to
+                # Python's repr(), which json.loads() can't read back.
                 sample = {
                     **sample,
-                    "gender": format_field("gender", sample.get("gender")),
-                    "race": format_field("race", sample.get("race")),
-                    "education": format_field("education", sample.get("education")),
-                    "ses": format_field("ses", sample.get("ses")),
+                    "gender_pct": json.dumps(sample.get("gender_pct") or {}),
+                    "race_pct": json.dumps(sample.get("race_pct") or {}),
+                    "education_pct": json.dumps(sample.get("education_pct") or {}),
                 }
                 writer.writerow(
                     {

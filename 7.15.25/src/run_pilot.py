@@ -1,12 +1,12 @@
-"""Run the 46-article pilot through the chosen model (docs/DECISIONS.md #3:
-meta-llama/Llama-3.3-70B-Instruct) and save output for a QA spot-check
-against docs/SCORING_RUBRIC.md before committing to a full-corpus run.
+"""Run the 46-article pilot through our model (docs/DECISIONS.md #3,
+meta-llama/Llama-3.3-70B-Instruct) and save the output so we can review it
+against docs/SCORING_RUBRIC.md before starting the full run.
 
-Usage (on a Rivanna GPU node — see docs/RUNNING_ON_RIVANNA.md):
+Usage (on a Rivanna GPU node, see docs/RUNNING_ON_RIVANNA.md):
     python -m src.run_pilot --sample data/sampled_articles.csv --backend vllm
 
-Reads full text straight from the local corpus XML (`xml_path` column in
-data/sampled_articles.csv) — no network calls.
+It reads the full text straight from the local corpus XML (the xml_path column
+in data/sampled_articles.csv), so there are no network calls.
 """
 from __future__ import annotations
 
@@ -30,8 +30,9 @@ def load_sample(csv_path: str) -> list[dict]:
 
 
 def _existing_status(out_path: str) -> str | None:
-    """The `status` of a previously-written result file, or None if there is no
-    readable result yet. Used to resume a preempted run."""
+    """Return the status of a result file we already wrote, or None if there
+    isn't one to read yet. This is what lets us resume after a job is
+    preempted."""
     if not os.path.exists(out_path):
         return None
     try:
@@ -48,16 +49,16 @@ def run_pilot(
     results_dir: str = "results",
     overwrite: bool = False,
 ) -> None:
-    """client_factory(model_id) -> object with .generate(prompt) -> str,
-    injectable for testing without loading a real model (see
-    tests/test_run_pilot.py).
+    """client_factory(model_id) returns something with a .generate(prompt)
+    method. We pass it in so tests can substitute a fake model instead of loading
+    a real one (see tests/test_run_pilot.py).
 
-    Resumable and crash-proof, like src/run_pipeline.py: an article whose result
-    file already says `status: "ok"` is skipped (unless `overwrite`), and any
-    error on a single article is recorded as a `status: "error"` result rather
-    than aborting the whole run. The model client is loaded lazily on the first
-    article that actually needs generating, so a fully-resumed run never loads
-    the model at all.
+    Like src/run_pipeline.py, this is safe to re-run. If an article's result file
+    already says status "ok" we skip it (unless overwrite is set), and if one
+    article raises an error we write a status "error" result and keep going
+    instead of aborting the whole run. The model client is built only the first
+    time we actually need to generate something, so a run that's fully resumed
+    never loads the model at all.
     """
     articles = load_sample(sample_csv)
     model_dir = os.path.join(results_dir, model_id.replace("/", "__"))
@@ -88,7 +89,7 @@ def run_pilot(
             logger.warning("Extraction failed for %s: %s", doi, exc)
             result = {"doi": doi, "model": model_id, "status": "error", "error": str(exc)}
             counts["error"] += 1
-        except Exception as exc:  # keep going: one bad article must not kill the job
+        except Exception as exc:  # one bad article shouldn't abort the whole run
             logger.exception("Unexpected error extracting %s", doi)
             result = {"doi": doi, "model": model_id, "status": "error", "error": repr(exc)}
             counts["error"] += 1
@@ -97,7 +98,7 @@ def run_pilot(
             json.dump(result, f, indent=2)
 
     logger.info(
-        "%s: %d ok, %d error, %d skipped (of %d) -> %s",
+        "%s: %d ok, %d error, %d skipped out of %d, results in %s",
         model_id, counts["ok"], counts["error"], counts["skipped"], len(articles), model_dir,
     )
 
@@ -110,14 +111,14 @@ def main() -> None:
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument(
         "--backend", default="vllm", choices=["vllm", "transformers", "echo"],
-        help="'echo' loads no model — a GPU-free dry-run to validate the wiring "
-             "(CSV load, XML read, prompt build, JSON write) before requesting GPUs.",
+        help="'echo' loads no model. It's a GPU-free dry-run to check the wiring "
+             "(read the CSV, read the XML, build the prompt, write the JSON) before you request GPUs.",
     )
     parser.add_argument("--tensor-parallel-size", type=int, default=1)
     parser.add_argument("--model", default=None, help="Override config.yaml's default_model")
     parser.add_argument(
         "--overwrite", action="store_true",
-        help="Re-run every article even if a prior 'ok' result exists (default: resume).",
+        help="Re-run every article even if we already have an 'ok' result for it (by default we resume).",
     )
     args = parser.parse_args()
 

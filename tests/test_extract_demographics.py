@@ -7,7 +7,9 @@ from src.extract_demographics import (
     ExtractionValidationError,
     REQUIRED_KEYS,
     extract_demographics_from_xml,
+    format_field,
     parse_and_validate,
+    parse_field,
 )
 
 FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "sample_article.xml")
@@ -15,14 +17,10 @@ FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "sample_article.xm
 VALID_ROW = {
     "doi": "10.1371/journal.pone.0000001",
     "sample_id": 1,
-    "gender_reported": 1,
-    "gender_pct": {"male": 45, "female": 55, "other": 0},
-    "race_reported": 0,
-    "race_pct": {},
-    "education_reported": 0,
-    "education_pct": {},
-    "ses_reported": 0,
-    "ses_value": None,
+    "gender": {"reported": 1, "pct": {"male": 45, "female": 55, "other": 0}},
+    "race": {"reported": 0, "pct": {}},
+    "education": {"reported": 0, "pct": {}},
+    "ses": {"reported": 0, "value": None},
 }
 
 
@@ -38,7 +36,14 @@ def test_parse_and_validate_rejects_non_json():
 
 def test_parse_and_validate_rejects_missing_keys():
     bad_row = dict(VALID_ROW)
-    del bad_row["race_pct"]
+    del bad_row["race"]
+    with pytest.raises(ExtractionValidationError):
+        parse_and_validate(json.dumps([bad_row]), expected_doi=VALID_ROW["doi"])
+
+
+def test_parse_and_validate_rejects_malformed_demographic_field():
+    bad_row = dict(VALID_ROW)
+    bad_row["gender"] = 1  # not an object with reported/pct
     with pytest.raises(ExtractionValidationError):
         parse_and_validate(json.dumps([bad_row]), expected_doi=VALID_ROW["doi"])
 
@@ -50,6 +55,25 @@ def test_parse_and_validate_rejects_doi_mismatch():
 
 def test_required_keys_matches_valid_row_shape():
     assert REQUIRED_KEYS == set(VALID_ROW.keys())
+
+
+def test_format_field_renders_flat_human_readable_form():
+    assert format_field("gender", {"reported": 1, "pct": {"male": 60, "female": 40}}) == (
+        "1, 60% Male, 40% Female"
+    )
+    assert format_field("race", {"reported": 0, "pct": {}}) == "0"
+    assert format_field("ses", {"reported": 2, "value": 30000}) == "2, 30000"
+    assert format_field("ses", {"reported": 0, "value": None}) == "0"
+
+
+def test_parse_field_is_inverse_of_format_field():
+    for name, value in [
+        ("gender", {"reported": 1, "pct": {"male": 60, "female": 40}}),
+        ("race", {"reported": 1, "pct": {"white": 70, "black": 30}}),
+        ("education", {"reported": 0, "pct": {}}),
+        ("ses", {"reported": 2, "value": "30000"}),
+    ]:
+        assert parse_field(name, format_field(name, value)) == value
 
 
 class FakeClient:
