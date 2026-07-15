@@ -1,5 +1,5 @@
-"""Draw the 46-article pilot sample (docs/DECISIONS.md #2) from the local
-corpus index built by src/build_corpus_index.py. No network calls.
+"""Draw the 46-article pilot sample (docs/DECISIONS.md #2) from the local corpus
+index that src/build_corpus_index.py builds. No network calls.
 
 Usage:
     python -m src.sample_articles --index data/corpus_index.csv --out data/sampled_articles.csv
@@ -34,7 +34,7 @@ def load_index(index_csv: str) -> list[dict]:
 
 
 def distinct_subfields(rows: list[dict]) -> list[str]:
-    """All psychology subfields present in the index, in first-seen order."""
+    """Every psychology subfield in the index, in the order we first see it."""
     seen: list[str] = []
     for r in rows:
         for sf in r.get("matched_subfields", "").split(";"):
@@ -50,19 +50,19 @@ def stratified_sample(
     per_subfield: int = 2,
     seed: int = 42,
 ) -> list[dict]:
-    """Randomly select `per_subfield` articles from each subfield.
+    """Pick `per_subfield` articles at random from each subfield.
 
-    `rows` is a list of dicts as produced by build_corpus_index.py (each with
-    a `matched_subfields` field of ';'-joined subfield names) — passed in
-    directly rather than read from disk here, so this is trivially
-    unit-testable with fixture rows (tests/test_sample_articles.py).
+    `rows` is the list of dicts build_corpus_index.py produces (each one has a
+    `matched_subfields` field of ';'-joined subfield names). We pass it in
+    directly instead of reading from disk here, which makes this easy to
+    unit-test with fixture rows (tests/test_sample_articles.py).
 
-    When `subfields` is None (the default, used by the CLI), the subfields are
-    taken from whatever the index actually contains, and any subfield with
-    fewer than `per_subfield` articles is skipped with a warning — this keeps
-    the pilot representative across *all* psychology subfields PLOS uses
-    without a hardcoded list. When `subfields` is given explicitly, a subfield
-    short on candidates is an error instead.
+    If `subfields` is None (the default the CLI uses), we take the subfields from
+    whatever the index actually has, and skip any subfield with fewer than
+    `per_subfield` articles (with a warning). That way the pilot covers all the
+    psychology subfields PLOS uses without us hardcoding a list. If you pass
+    `subfields` in yourself, a subfield that's short on candidates is an error
+    instead.
     """
     rng = random.Random(seed)
     auto = subfields is None
@@ -101,9 +101,9 @@ def write_csv(articles: list[dict], out_path: str) -> None:
 
 
 def filter_to_local_xml(rows: list[dict]) -> list[dict]:
-    """Drop rows whose xml_path isn't present on disk — ~6% of the Solr index
-    is articles (mostly very recent) not in the local corpus snapshot, which
-    can't be full-text extracted, so they must not be drawn into the pilot."""
+    """Drop rows whose xml_path isn't on disk. About 6% of the Solr index is
+    articles (mostly very recent ones) that aren't in the local corpus snapshot,
+    so we can't pull their full text and shouldn't sample them."""
     kept = [r for r in rows if r.get("xml_path") and os.path.exists(r["xml_path"])]
     dropped = len(rows) - len(kept)
     if dropped:

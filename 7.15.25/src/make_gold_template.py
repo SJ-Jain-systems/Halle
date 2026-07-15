@@ -1,30 +1,28 @@
-"""Generate a blank hand-coding template for the pilot ground-truth ("gold")
-set (docs/SCORING_RUBRIC.md).
+"""Make a blank CSV for hand-coding the pilot "gold" answers (see docs/SCORING_RUBRIC.md).
 
-A human reads each pilot article and fills in, by hand, the same schema the
-model emits (src/extract_demographics.py::REQUIRED_KEYS) — one row per distinct
-participant sample. The completed file is the gold answer that
-src/score_pilot.py scores the model's output against.
+You read each pilot article yourself and fill in the same columns the model
+spits out (the keys in src/extract_demographics.py, REQUIRED_KEYS), one row per
+participant sample. Once it's filled in, src/score_pilot.py checks the model
+against it.
 
-Usage:
+Run it like:
     python -m src.make_gold_template \\
         --sample data/sampled_articles.csv \\
         --out data/pilot_gold_template.csv
 
-The unit of analysis is the *sample*, not the article: an article that reports
-several independent samples gets one row per sample, all sharing its `doi` and
-numbered by `sample_id` (1, 2, ...). This template pre-fills one row per article
-with `sample_id=1`; duplicate a row and bump `sample_id` for each extra sample.
+We code per sample, not per article. If an article reports two or three separate
+samples, give each one its own row (same doi, sample_id 1, 2, 3 and so on). The
+template starts you off with one row per article at sample_id 1, so just copy the
+row and bump sample_id when there's more than one sample.
 
-The `*_pct` columns hold a JSON object, e.g. {"male": 45, "female": 55}, to
-match the model output. Leave them blank ({}) when the demographic is not
-reported. `ses_reported` is the 0/1/2 detail scale (0 = not reported,
-1 = category only, 2 = numeric threshold); put the numeric threshold, if any,
-in `ses_value`.
+The *_pct columns take a little JSON blob like {"male": 45, "female": 55}, the
+same shape the model uses. Leave them as {} when nothing was reported.
+ses_reported is the 0/1/2 scale (0 nothing, 1 just a category, 2 an actual
+number); if there's a number, drop it in ses_value.
 
-Optionally, --text-dir writes each article's methods-first extraction text
-(exactly what the model reads, via src/jats_xml.get_extraction_text) to a file,
-so the coder reads the same text the model does.
+Pass --text-dir if you also want the methods text for each article dumped to a
+file, so you're reading the exact same thing the model reads (via
+src/jats_xml.get_extraction_text).
 """
 from __future__ import annotations
 
@@ -34,8 +32,8 @@ import os
 
 from src.extract_demographics import REQUIRED_KEYS
 
-# Helper columns carried through for the coder's convenience (not scored), then
-# the schema columns they fill in. `doi` is both a helper and a schema key.
+# Columns we carry along so the coder has some context (these don't get scored),
+# then the columns they actually fill in. doi doubles as a schema key.
 HELPER_FIELDS = ["subfield", "title", "xml_path"]
 SCHEMA_FIELDS = [
     "doi",
@@ -51,8 +49,8 @@ SCHEMA_FIELDS = [
 ]
 TEMPLATE_FIELDS = ["doi"] + HELPER_FIELDS + [f for f in SCHEMA_FIELDS if f != "doi"]
 
-# Blank template row: coder fills the schema fields. `_pct` cells default to an
-# empty JSON object so an untouched cell still parses.
+# A blank row for the coder to fill in. The _pct cells start as {} so an
+# untouched cell still parses.
 _BLANK_CODING = {
     "sample_id": 1,
     "gender_reported": "",
@@ -76,7 +74,7 @@ def load_sample(sample_csv: str) -> list[dict]:
 
 
 def build_template_rows(articles: list[dict]) -> list[dict]:
-    """One blank coding row per article, carrying the helper columns."""
+    """One blank row per article, with the helper columns filled in."""
     rows = []
     for a in articles:
         row = {"doi": a.get("doi", "")}
@@ -96,8 +94,8 @@ def write_template(rows: list[dict], out_path: str) -> None:
 
 
 def dump_texts(articles: list[dict], text_dir: str) -> int:
-    """Write each article's methods-first extraction text so the coder reads the
-    same text the model sees. Returns the number of files written."""
+    """Dump each article's methods text so you read what the model reads. Returns
+    how many files got written."""
     from src.jats_xml import get_extraction_text
 
     os.makedirs(text_dir, exist_ok=True)
@@ -121,7 +119,7 @@ def main() -> None:
     parser.add_argument(
         "--text-dir",
         default=None,
-        help="Optional: also write each article's extraction text here for the coder.",
+        help="Also dump each article's extraction text here so you can read along.",
     )
     args = parser.parse_args()
 

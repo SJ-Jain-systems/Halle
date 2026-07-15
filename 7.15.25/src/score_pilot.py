@@ -1,17 +1,17 @@
-"""Score the model's pilot output against the hand-coded gold set
-(docs/SCORING_RUBRIC.md).
+"""Check the model's pilot output against the gold answers we coded by hand
+(see docs/SCORING_RUBRIC.md).
 
-Reads the completed gold CSV (produced from src/make_gold_template.py and coded
-by hand) and the model's per-article JSON output written by src/run_pilot.py
-(results/<model_id>/<doi>.json), aligns rows by (doi, sample_id), and reports
-per-field agreement mapped to the rubric's four axes:
+It reads the filled-in gold CSV (from src/make_gold_template.py) and the model's
+per-article JSON from src/run_pilot.py (results/<model_id>/<doi>.json), lines the
+rows up by (doi, sample_id), and reports how well they agree on the rubric's four
+axes:
 
-  - Coverage / reporting flags : does gold `*_reported` match the model's?
-  - Numeric accuracy           : do the reported `*_pct` breakdowns agree?
-  - Multi-sample handling       : one gold row per sample matched by the model?
-  - Schema adherence           : model rows carry exactly the required keys?
+  Coverage / reporting flags : do the gold *_reported flags match the model's?
+  Numeric accuracy           : do the reported *_pct breakdowns line up?
+  Multi-sample handling       : did the model produce one row per sample like the gold?
+  Schema adherence           : do the model rows have all the required keys?
 
-Usage:
+Run it like:
     python -m src.score_pilot \\
         --gold data/pilot_gold.csv \\
         --results-dir results \\
@@ -57,8 +57,8 @@ def _to_pct(x) -> dict:
 
 
 def load_gold(gold_csv: str) -> list[dict]:
-    """Parse the hand-coded gold CSV into typed rows (flags -> int, *_pct ->
-    dict), keeping only the schema columns."""
+    """Read the hand-coded gold CSV into typed rows (flags become ints, *_pct
+    becomes a dict), keeping just the schema columns."""
     with open(gold_csv, newline="", encoding="utf-8") as f:
         raw_rows = list(csv.DictReader(f))
     rows = []
@@ -83,7 +83,7 @@ def load_gold(gold_csv: str) -> list[dict]:
 
 
 def load_model_outputs(results_dir: str, model_id: str) -> dict[str, dict]:
-    """Read run_pilot.py's per-article JSON into {doi: {"status", "rows"}}."""
+    """Load run_pilot.py's per-article JSON into {doi: {"status", "rows"}}."""
     model_dir = os.path.join(results_dir, model_id.replace("/", "__"))
     outputs: dict[str, dict] = {}
     if not os.path.isdir(model_dir):
@@ -107,11 +107,11 @@ def _by_sample(rows: list[dict]) -> dict[int, dict]:
 
 
 def score(gold_rows: list[dict], model_outputs: dict[str, dict], tol: float = 1.0):
-    """Score model output against gold, aligned by (doi, sample_id).
+    """Score the model against the gold rows, matched up by (doi, sample_id).
 
-    Returns (per_doi_records, summary). The gold set defines the universe of
-    articles scored; a gold article with no model output is scored as a total
-    miss on coverage/schema.
+    Returns (per_doi_records, summary). The gold set is what we're scoring
+    against, so an article that's in the gold but has no model output counts as a
+    total miss on coverage and schema.
     """
     gold_by_doi: dict[str, list[dict]] = defaultdict(list)
     for r in gold_rows:
@@ -240,7 +240,7 @@ def main() -> None:
     parser.add_argument("--config", default="config.yaml")
     parser.add_argument("--model", default=None, help="Override config.yaml's default_model")
     parser.add_argument("--out", default="results/pilot_accuracy.csv")
-    parser.add_argument("--tol", type=float, default=1.0, help="Tolerance for percentage-point agreement")
+    parser.add_argument("--tol", type=float, default=1.0, help="How many percentage points of slack to allow")
     args = parser.parse_args()
 
     if args.model:

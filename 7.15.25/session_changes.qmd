@@ -1,6 +1,6 @@
 ---
-title: "Halle — Session Changes"
-subtitle: "Everything changed on 2025-07-15, with the updated files snapshotted alongside"
+title: "Halle session changes"
+subtitle: "Everything that changed on 2025-07-15, with the updated files snapshotted next to it"
 date: 2025-07-15
 format:
   html:
@@ -15,30 +15,29 @@ format:
 
 # Overview
 
-This folder is a point-in-time snapshot of one working session on the Halle
-pipeline (demographic-reporting rates in *PLOS ONE* psychology articles). It
-contains this write-up plus a copy of **every file the session changed**, kept
-under its original repository path (e.g. `src/run_pilot.py` →
-`7.15.25/src/run_pilot.py`). The live repository remains the source of truth; these
-copies are a frozen hand-off for reference and review.
+This folder is a snapshot of one working session on the Halle pipeline (how well
+*PLOS ONE* psychology articles report their sample demographics). It has this
+write-up plus a copy of **every file the session touched**, kept under its
+original repo path (so `src/run_pilot.py` shows up as `7.15.25/src/run_pilot.py`).
+The live repo is still the source of truth; these are just frozen copies for
+reference and review.
 
-The work landed as three focused pull requests, all merged into the default
-branch:
+The work went out as three pull requests, all merged into the default branch:
 
 | PR | Theme |
 |----|-------|
-| #1 | Report feedback + pilot ground-truth tooling |
-| #2 | Corrected the stale "10-article" pilot wording to 46 |
-| #3 | Hardened the pilot run + added a GPU-free dry-run backend |
+| #1 | Report feedback and pilot ground-truth tooling |
+| #2 | Fixed the stale "10-article" pilot wording to 46 |
+| #3 | Hardened the pilot run and added a GPU-free dry-run backend |
 
 ## File manifest (18 files)
 
 **New (5):**
 
-- `src/make_gold_template.py` — generate the blank hand-coding template
-- `src/score_pilot.py` — score model output against the hand-coded gold set
-- `tests/test_make_gold_template.py`, `tests/test_score_pilot.py` — their tests
-- `docs/changes_report_feedback.qmd` — the PR-#1 write-up
+- `src/make_gold_template.py`: makes the blank hand-coding template
+- `src/score_pilot.py`: scores the model against the hand-coded gold set
+- `tests/test_make_gold_template.py`, `tests/test_score_pilot.py`: their tests
+- `docs/changes_report_feedback.qmd`: the PR #1 write-up
 
 **Modified (13):**
 
@@ -49,87 +48,86 @@ branch:
 - `scripts/diagnose_2015.py`, `slurm/run_pilot.slurm`, `README.md`
 - `tests/test_run_pilot.py`
 
-# PR #1 — Report feedback + pilot ground-truth tooling
+# PR #1: report feedback and gold-set tooling
 
-Three review notes on the progress report, plus the missing machinery to
-validate the model against a human-coded answer.
+Three notes on the progress report, plus the missing pieces to check the model
+against a human-coded answer.
 
-## Trim the redundant breakdown in section 8
+## Trim the repeated breakdown in section 8
 
-Section 2 of the report ("The extraction schema") is the authoritative schema
-definition. Section 8 ("Extraction mechanics") quoted the model prompt and
-re-listed the *same* per-subgroup percentage breakdowns (male/female/other,
-white/black/…, college-vs-not). That duplication was removed: the quoted prompt
-now refers to the schema in section 2 instead of re-enumerating every subgroup.
-This is prose only — the percentages are still collected and are consumed
-downstream by `analyze_trends.py::mean_subgroup_pct`. Applied to both
-`docs/project_report.qmd` and the curated `sharing/project_report.qmd`.
+Section 2 of the report ("The extraction schema") is where the schema actually
+gets defined. Section 8 ("Extraction mechanics") quoted the model prompt and
+re-listed the *same* per-subgroup breakdowns (male/female/other, white/black/...,
+college or not). That's the same thing said twice, so we cut it: the quoted prompt
+now points back at the section 2 schema instead of spelling out every subgroup
+again. It's a prose change only. The percentages are still collected and still
+used downstream by `analyze_trends.py::mean_subgroup_pct`. Applied to both
+`docs/project_report.qmd` and the `sharing/project_report.qmd` copy.
 
-## `psycholog` → `psych`
+## `psycholog` to `psych`
 
-The literal substring `"psycholog"` was used only as a loose `contains` count in
-the 2015 QA diagnostic (`scripts/diagnose_2015.py`) — **not** the classification
-path, which is an exact match on `"Psychology"` and is untouched. It was
-broadened to `"psych"`, and the report narrative/table that quotes it were
-updated in both report copies. The illustrative table counts are noted as the
-originally-observed values.
+The literal `"psycholog"` substring was only used as a loose `contains` count in
+the 2015 QA diagnostic (`scripts/diagnose_2015.py`), not in the classification
+path (that's an exact match on `"Psychology"`, which we left alone). We widened it
+to `"psych"` and updated the report narrative and table that quote it, in both
+copies. The table counts are flagged as the numbers we originally saw.
 
-## Ground-truth template + scoring script
+## Gold-set template and scoring script
 
-The scoring rubric assumed a hand-coded "gold" answer existed but nothing
-produced or scored against it. Added:
+The scoring rubric assumed a hand-coded "gold" answer existed, but nothing made
+one or scored against it. Added:
 
-- **`src/make_gold_template.py`** — generates a blank hand-coding CSV, one row per
-  pilot article, with the exact schema the model emits
-  (`extract_demographics.REQUIRED_KEYS`). The unit of analysis is the *sample*, so
-  a coder duplicates a row and bumps `sample_id` for extra samples. `--text-dir`
-  optionally dumps each article's methods-first text (what the model reads).
-- **`src/score_pilot.py`** — scores `run_pilot.py`'s per-article JSON against the
-  completed gold CSV, aligned by `(doi, sample_id)`, reporting per-field agreement
-  mapped to the rubric's four axes (coverage / numeric / multi-sample / schema)
+- **`src/make_gold_template.py`**: makes a blank hand-coding CSV, one row per pilot
+  article, with the exact columns the model spits out
+  (`extract_demographics.REQUIRED_KEYS`). We code per sample, so you copy a row and
+  bump `sample_id` for extra samples. `--text-dir` optionally dumps each article's
+  methods text (what the model reads).
+- **`src/score_pilot.py`**: scores `run_pilot.py`'s per-article JSON against the
+  filled-in gold CSV, matched up by `(doi, sample_id)`, reporting per-field
+  agreement on the rubric's four axes (coverage, numeric, multi-sample, schema)
   into `results/pilot_accuracy.csv`.
-- **`docs/SCORING_RUBRIC.md`** — a "Producing the gold set" section; also fixed the
+- **`docs/SCORING_RUBRIC.md`**: a "Producing the gold set" section, plus fixing the
   stale "10-article" wording (the pilot is 46).
 
-A fuller version of this section lives in `docs/changes_report_feedback.qmd`
-(also snapshotted here).
+There's a fuller version of this in `docs/changes_report_feedback.qmd` (also
+snapshotted here).
 
-# PR #2 — Correct the "10-article" pilot wording to 46
+# PR #2: fix the "10-article" wording to 46
 
-The taxonomy-driven pilot draws 2 articles per subfield across the 23 subfields
-the index contains — **46**, not the `2 × 5 = 10` the original 5-subfield brief
-assumed. The report and rubric already said 46; this corrected the remaining ~12
-"10-article" references in `README.md`, several `src/` docstrings, and `docs/`.
+The taxonomy-driven pilot takes 2 articles per subfield across the 23 subfields
+the index has, so **46**, not the `2 × 5 = 10` the original 5-subfield brief
+assumed. The report and rubric already said 46; this fixed the leftover ~12
+"10-article" mentions in `README.md`, a few `src/` docstrings, and `docs/`.
 
-Deliberately left unchanged: the passages in `docs/DECISIONS.md` and
+Left alone on purpose: the bits in `docs/DECISIONS.md` and
 `docs/RUNNING_ON_RIVANNA.md` that use "10" to *explain* the brief's original
-assumption ("2×N, not a fixed 10"), and the "five subfields" references describing
-what the brief named.
+assumption ("2×N, not a fixed 10"), and the "five subfields" references about what
+the brief named.
 
-# PR #3 — Harden the pilot run + GPU-free dry-run
+# PR #3: harden the pilot run and add a GPU-free dry-run
 
-Prepared `src/run_pilot.py` for the actual Rivanna GPU run so it survives
-preemption and can be validated before spending GPU time. It had lagged the
+Got `src/run_pilot.py` ready for the real Rivanna GPU run, so it survives
+preemption and can be checked before you spend GPU time. It had fallen behind the
 already-hardened `src/run_pipeline.py`.
 
-- **Resumable** — an article already written with `status:"ok"` is skipped, so a
-  preempted job resumes where it left off (`--overwrite` forces a full re-run).
-  The model client is loaded **lazily**, so a fully-resumed run never loads the
-  70B model at all.
-- **Crash-proof** — a non-validation error on one article is recorded as a
-  `status:"error"` result and the run continues, instead of aborting the whole
-  job (mirrors `run_pipeline.py`).
-- **Progress/summary** via `logging` (ok / error / skipped counts).
-- **`echo` backend** (`EchoModelClient` in `src/model_backend.py`) — loads no
-  model and returns a schema-valid placeholder for the prompt's DOI, so
-  `python -m src.run_pilot --backend echo` exercises the full path (CSV → XML →
-  prompt → validate → JSON) on the login node with zero GPU.
-- **Docs/wording** — `docs/RUNNING_ON_RIVANNA.md` documents the dry-run-first step
-  and resume behavior; fixed the last two stale "10"-pilot references
-  (`slurm/run_pilot.slurm`, the Rivanna doc).
+- **Resumable:** an article already written with `status:"ok"` gets skipped, so a
+  preempted job picks up where it left off (`--overwrite` forces a full re-run).
+  The model client loads *lazily*, so a fully-resumed run never loads the 70B
+  model at all.
+- **Crash-proof:** a non-validation error on one article gets written as a
+  `status:"error"` result and the run keeps going, instead of taking down the
+  whole job (same as `run_pipeline.py`).
+- **Progress and summary** through `logging` (ok / error / skipped counts).
+- **`echo` backend** (`EchoModelClient` in `src/model_backend.py`): loads no model
+  and hands back a schema-valid placeholder for the prompt's DOI, so
+  `python -m src.run_pilot --backend echo` runs the whole path (CSV, XML, prompt,
+  validate, JSON) on the login node with no GPU.
+- **Docs and wording:** `docs/RUNNING_ON_RIVANNA.md` now covers the dry-run-first
+  step and the resume behavior; fixed the last two stale "10"-pilot references
+  (`slurm/run_pilot.slurm` and the Rivanna doc).
 
-Deferred (not done): vLLM batching for `run_pilot` and the latent
-`generate_batch` output-ordering bug in `model_backend.py` — low payoff for 46
+Left for later (not done): vLLM batching for `run_pilot`, and the latent
+`generate_batch` output-ordering bug in `model_backend.py`. Not much payoff for 46
 articles.
 
 # How to use the new tooling
@@ -140,7 +138,7 @@ articles.
 python -m src.run_pilot --sample data/sampled_articles.csv --backend echo
 ```
 
-**Produce and score the ground-truth gold set:**
+**Make and score the gold set:**
 
 ```bash
 # 1. Blank hand-coding template (optionally dump the text the model reads)
@@ -153,8 +151,8 @@ python -m src.make_gold_template \
 python -m src.score_pilot --gold data/pilot_gold.csv --out results/pilot_accuracy.csv
 ```
 
-# Verification (as run this session)
+# Verification (what we actually ran this session)
 
-- `python -m pytest -q` — 47 tests pass, fully offline (no GPU/network).
-- Both new tools were exercised end-to-end against the repo fixtures; the pilot
-  dry-run confirmed clean write → resume-skips → `--overwrite` re-runs.
+- `python -m pytest -q`: 47 tests pass, fully offline (no GPU or network).
+- Both new tools got run end to end against the repo fixtures; the pilot dry-run
+  showed a clean write, then resume-skips, then `--overwrite` re-runs.

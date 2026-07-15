@@ -1,11 +1,12 @@
-"""Investigate why psychology detection misses 2015 articles specifically.
+"""Figure out why our psychology detection whiffs on 2015 articles in particular.
 
-For a corpus sample, buckets by year and counts, per year: total articles,
-those our get_psychology_subfields() flags as psychology, and those whose raw
-subject terms merely *contain* "psych". A year where the second count is
-healthy but the first is ~0 is where our structural detection is failing.
-Then dumps the raw <article-categories> of a few such failing 2015 articles
-so the structural difference is visible.
+Take a sample of the corpus, bucket it by year, and for each year count three
+things: how many articles there are total, how many our get_psychology_subfields()
+tags as psychology, and how many just have "psych" somewhere in their raw subject
+terms. A year where that last count looks fine but the tagged count is basically
+0 is a year where our structural detection is broken. Then it dumps the raw
+<article-categories> from a few of those 2015 articles so you can see what's
+different about them.
 
     python scripts/diagnose_2015.py --corpus-dir "$PLOS_CORPUS"
 """
@@ -74,11 +75,11 @@ def main() -> None:
         r = per_year[y]
         print(f"  {y} | {r['n']:4d} | {r['psych_node']:4d} | {r['psych_substr']:4d} | {r['empty_subj']:4d}")
 
-    print("\n--- subj-group-type values seen in 2015 articles ---")
+    print("\n== subj-group-type values seen in 2015 articles ==")
     for k, v in sgtype_2015.most_common():
         print(f"   {v:5d}  {k!r}")
 
-    print("\n--- raw article-categories of first 3 sampled 2015 articles ---")
+    print("\n== raw article-categories of first 3 sampled 2015 articles ==")
     for name, raw in dumps_2015:
         print(f"=== {name} ===")
         print(raw)
