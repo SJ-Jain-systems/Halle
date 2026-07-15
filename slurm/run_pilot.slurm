@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run the 10-article pilot through meta-llama/Llama-3.3-70B-Instruct (the
+# Run the 46-article pilot through meta-llama/Llama-3.3-70B-Instruct (the
 # model chosen in docs/DECISIONS.md #3) and write
 # results/meta-llama__Llama-3.3-70B-Instruct/<doi>.json — a QA spot-check
 # against docs/SCORING_RUBRIC.md before committing GPU time to the full

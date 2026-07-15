@@ -172,18 +172,31 @@ huggingface-cli login   # paste a token with read access, after accepting
 export HF_HOME=/scratch/$USER/hf_cache   # keep weights off your home quota
 ```
 
-Submit the pilot job:
+First, dry-run the wiring on the login node — no GPU, no model download:
+
+```bash
+python -m src.run_pilot --sample data/sampled_articles.csv --backend echo
+```
+
+The `echo` backend loads no model; it exercises the whole path (read the sample
+CSV, find each article's local XML, build the prompt, validate the schema, write
+`results/.../<doi>.json`) and surfaces any path/parsing problem before you spend
+a GPU allocation. The output values are placeholders, not real extractions.
+
+Then submit the real pilot job:
 
 ```bash
 sbatch slurm/run_pilot.slurm
 ```
 
-Writes `results/meta-llama__Llama-3.3-70B-Instruct/<doi>.json` for all 10
-pilot articles. This isn't a model comparison — the model choice is settled
-(`docs/DECISIONS.md` #3) — it's a QA spot-check: score the output against
-`docs/SCORING_RUBRIC.md` (coverage, numeric accuracy, schema adherence,
-multi-sample handling) to catch a bad prompt or a parsing bug on 46 articles
-rather than after burning GPU hours on the full corpus.
+Writes `results/meta-llama__Llama-3.3-70B-Instruct/<doi>.json` for all 46
+pilot articles. The run is resumable: an article already written with
+`status: "ok"` is skipped, so a preempted job just picks up where it left off
+(pass `--overwrite` to force a full re-run). This isn't a model comparison — the
+model choice is settled (`docs/DECISIONS.md` #3) — it's a QA spot-check: score
+the output against `docs/SCORING_RUBRIC.md` (coverage, numeric accuracy, schema
+adherence, multi-sample handling) to catch a bad prompt or a parsing bug on 46
+articles rather than after burning GPU hours on the full corpus.
 
 **If Llama-3.3-70B-Instruct doesn't fit your GPU allocation** (needs
 roughly 140GB+ of GPU memory in bf16 across the tensor-parallel group): drop

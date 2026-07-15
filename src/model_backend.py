@@ -1,12 +1,14 @@
 """Local GPU inference backends for Rivanna, where compute isn't the
-constraint — no hosted API, no rate limits. Both implement the ModelClient
+constraint — no hosted API, no rate limits. All implement the ModelClient
 interface from src/extract_demographics.py (a `.generate(prompt) -> str`
-method), so either drops straight into extract_demographics()/run_pilot.py/run_pipeline.py.
+method), so any drops straight into extract_demographics()/run_pilot.py/run_pipeline.py.
 
 vLLM is the recommended path for anything beyond the 46-article pilot: it
 batches requests and uses paged attention, which matters once you're running
 the full filtered corpus. The transformers backend is a simpler fallback for
-small allocations or debugging on a single GPU.
+small allocations or debugging on a single GPU. The `echo` backend loads no
+model at all — a GPU-free dry-run to validate the pipeline wiring before
+requesting a GPU allocation (see EchoModelClient).
 
 Neither backend has been exercised in this sandbox (no GPU, no model
 weights, no network to huggingface.co) — see docs/RUNNING_ON_RIVANNA.md for
@@ -14,6 +16,8 @@ how to validate this on an actual Rivanna GPU node before trusting output.
 """
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass, field
 
 DEFAULT_MAX_NEW_TOKENS = 2048
@@ -102,9 +106,51 @@ class TransformersModelClient:
         return result[0]["generated_text"]
 
 
+_DOI_IN_PROMPT = re.compile(r"Article DOI:\s*(\S+)")
+
+
+@dataclass
+class EchoModelClient:
+    """GPU-free dry-run backend: loads no model and needs no network.
+
+    Returns a schema-valid "all not reported" response for whatever DOI the
+    prompt carries (extract_demographics.EXTRACTION_PROMPT_TEMPLATE emits an
+    `Article DOI: <doi>` line). This lets `run_pilot`/`run_pipeline` exercise the
+    whole path — CSV load, XML read, prompt build, parse/validate, JSON write —
+    on the login node before requesting GPUs. Output is a wiring check, NOT a
+    real extraction.
+    """
+
+    model_id: str
+
+    def generate(self, prompt: str) -> str:
+        match = _DOI_IN_PROMPT.search(prompt)
+        if not match:
+            raise ValueError(
+                "EchoModelClient could not find an 'Article DOI:' line in the prompt; "
+                "the prompt template may have changed."
+            )
+        doi = match.group(1)
+        row = {
+            "doi": doi,
+            "sample_id": 1,
+            "gender_reported": 0,
+            "gender_pct": {},
+            "race_reported": 0,
+            "race_pct": {},
+            "education_reported": 0,
+            "education_pct": {},
+            "ses_reported": 0,
+            "ses_value": None,
+        }
+        return json.dumps([row])
+
+
 def build_client(model_id: str, backend: str = "vllm", **kwargs):
     if backend == "vllm":
         return VLLMModelClient(model_id=model_id, **kwargs)
     if backend == "transformers":
         return TransformersModelClient(model_id=model_id, **kwargs)
-    raise ValueError(f"Unknown backend {backend!r}, expected 'vllm' or 'transformers'")
+    if backend == "echo":
+        return EchoModelClient(model_id=model_id, **kwargs)
+    raise ValueError(f"Unknown backend {backend!r}, expected 'vllm', 'transformers', or 'echo'")
