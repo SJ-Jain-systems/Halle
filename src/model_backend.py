@@ -134,14 +134,10 @@ class EchoModelClient:
         row = {
             "doi": doi,
             "sample_id": 1,
-            "gender_reported": 0,
-            "gender_pct": {},
-            "race_reported": 0,
-            "race_pct": {},
-            "education_reported": 0,
-            "education_pct": {},
-            "ses_reported": 0,
-            "ses_value": None,
+            "gender": {"reported": 0, "pct": {}},
+            "race": {"reported": 0, "pct": {}},
+            "education": {"reported": 0, "pct": {}},
+            "ses": {"reported": 0, "value": None},
         }
         return json.dumps([row])
 

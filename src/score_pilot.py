@@ -26,14 +26,15 @@ import json
 import os
 from collections import defaultdict
 
-from src.extract_demographics import REQUIRED_KEYS
+from src.extract_demographics import (
+    DEMOGRAPHIC_FIELDS,
+    PCT_FIELDS,
+    REQUIRED_KEYS,
+    parse_field,
+)
 
-FLAG_COLS = ["gender_reported", "race_reported", "education_reported", "ses_reported"]
-PCT_DEMOGRAPHICS = [
-    ("gender_reported", "gender_pct"),
-    ("race_reported", "race_pct"),
-    ("education_reported", "education_pct"),
-]
+FLAG_FIELDS = list(DEMOGRAPHIC_FIELDS)  # gender, race, education, ses
+PCT_DEMOGRAPHICS = list(PCT_FIELDS)     # gender, race, education
 
 
 def _num(x) -> float:
@@ -48,17 +49,14 @@ def _to_int(x):
     return int(float(x))
 
 
-def _to_pct(x) -> dict:
-    if isinstance(x, dict):
-        return x
-    if x is None or x == "":
-        return {}
-    return json.loads(x)
+def _reported(field) -> int | None:
+    return (field or {}).get("reported")
 
 
 def load_gold(gold_csv: str) -> list[dict]:
-    """Parse the hand-coded gold CSV into typed rows (flags -> int, *_pct ->
-    dict), keeping only the schema columns."""
+    """Parse the hand-coded gold CSV into typed rows, turning each combined
+    demographic column (e.g. gender "1, 45% Male, 55% Female") into its
+    {"reported", "pct"} / {"reported", "value"} dict via parse_field."""
     with open(gold_csv, newline="", encoding="utf-8") as f:
         raw_rows = list(csv.DictReader(f))
     rows = []
@@ -69,14 +67,10 @@ def load_gold(gold_csv: str) -> list[dict]:
             {
                 "doi": r["doi"],
                 "sample_id": _to_int(r.get("sample_id")) or 1,
-                "gender_reported": _to_int(r.get("gender_reported")),
-                "gender_pct": _to_pct(r.get("gender_pct")),
-                "race_reported": _to_int(r.get("race_reported")),
-                "race_pct": _to_pct(r.get("race_pct")),
-                "education_reported": _to_int(r.get("education_reported")),
-                "education_pct": _to_pct(r.get("education_pct")),
-                "ses_reported": _to_int(r.get("ses_reported")),
-                "ses_value": r.get("ses_value") if r.get("ses_value") else None,
+                "gender": parse_field("gender", r.get("gender")),
+                "race": parse_field("race", r.get("race")),
+                "education": parse_field("education", r.get("education")),
+                "ses": parse_field("ses", r.get("ses")),
             }
         )
     return rows
@@ -160,21 +154,24 @@ def score(gold_rows: list[dict], model_outputs: dict[str, dict], tol: float = 1.
         num_correct = num_total = 0
         for sid in common:
             g, m = gold[sid], model[sid]
-            for col in FLAG_COLS:
+            for name in FLAG_FIELDS:
                 flag_total += 1
-                flag_correct += int(g.get(col) == m.get(col))
-                if g.get(col) != m.get(col):
-                    notes.append(f"s{sid} {col}: gold={g.get(col)} model={m.get(col)}")
-            for flag_col, pct_col in PCT_DEMOGRAPHICS:
-                if g.get(flag_col) == 1 and m.get(flag_col) == 1:
+                gf, mf = _reported(g.get(name)), _reported(m.get(name))
+                flag_correct += int(gf == mf)
+                if gf != mf:
+                    notes.append(f"s{sid} {name}.reported: gold={gf} model={mf}")
+            for name in PCT_DEMOGRAPHICS:
+                gd, md = g.get(name) or {}, m.get(name) or {}
+                if gd.get("reported") == 1 and md.get("reported") == 1:
                     num_total += 1
-                    ok = _pct_equal(g.get(pct_col) or {}, m.get(pct_col) or {}, tol)
+                    ok = _pct_equal(gd.get("pct") or {}, md.get("pct") or {}, tol)
                     num_correct += int(ok)
                     if not ok:
-                        notes.append(f"s{sid} {pct_col}: gold={g.get(pct_col)} model={m.get(pct_col)}")
-            if g.get("ses_reported") == 2 and m.get("ses_reported") == 2:
+                        notes.append(f"s{sid} {name}.pct: gold={gd.get('pct')} model={md.get('pct')}")
+            gs, ms = g.get("ses") or {}, m.get("ses") or {}
+            if gs.get("reported") == 2 and ms.get("reported") == 2:
                 num_total += 1
-                ok = abs(_num(g.get("ses_value")) - _num(m.get("ses_value"))) <= tol
+                ok = abs(_num(gs.get("value")) - _num(ms.get("value"))) <= tol
                 num_correct += int(ok)
 
         per_doi.append(

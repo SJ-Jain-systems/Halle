@@ -26,8 +26,8 @@ def test_build_template_rows_one_row_per_article_with_helpers():
     assert first["doi"] == ARTICLES[0]["doi"]
     assert first["subfield"] == "Social psychology"
     assert first["sample_id"] == 1
-    assert first["gender_reported"] == ""
-    assert first["gender_pct"] == "{}"
+    assert first["gender"] == ""
+    assert first["ses"] == ""
 
 
 def test_write_template_header_and_contents(tmp_path):

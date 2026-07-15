@@ -9,14 +9,10 @@ def gold_row(**overrides):
     row = {
         "doi": DOI,
         "sample_id": 1,
-        "gender_reported": 1,
-        "gender_pct": {"male": 45, "female": 55, "other": 0},
-        "race_reported": 0,
-        "race_pct": {},
-        "education_reported": 0,
-        "education_pct": {},
-        "ses_reported": 0,
-        "ses_value": None,
+        "gender": {"reported": 1, "pct": {"male": 45, "female": 55, "other": 0}},
+        "race": {"reported": 0, "pct": {}},
+        "education": {"reported": 0, "pct": {}},
+        "ses": {"reported": 0, "value": None},
     }
     row.update(overrides)
     return row
@@ -38,10 +34,13 @@ def test_perfect_match_scores_full_marks():
 
 
 def test_flipped_flag_and_wrong_pct_are_penalized():
-    gold = [gold_row(race_reported=1, race_pct={"white": 100})]
+    gold = [gold_row(race={"reported": 1, "pct": {"white": 100}})]
     # gender flag flipped (1 -> 0); race pct wrong (100 -> 50).
     model = model_payload(
-        [gold_row(gender_reported=0, race_reported=1, race_pct={"white": 50})]
+        [gold_row(
+            gender={"reported": 0, "pct": {}},
+            race={"reported": 1, "pct": {"white": 50}},
+        )]
     )
     per_doi, summary = score(gold, model)
     # 3 of 4 reporting flags correct (gender wrong).
@@ -68,31 +67,24 @@ def test_multi_sample_mismatch_flagged():
     assert summary["sample_count_match_rate"] == 0.0
 
 
-def test_load_gold_parses_pct_json_and_flags(tmp_path):
+def test_load_gold_parses_combined_columns(tmp_path):
     gold_csv = tmp_path / "gold.csv"
     with open(gold_csv, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=[
-                "doi", "sample_id", "gender_reported", "gender_pct",
-                "race_reported", "race_pct", "education_reported", "education_pct",
-                "ses_reported", "ses_value",
-            ],
+            fieldnames=["doi", "sample_id", "gender", "race", "education", "ses"],
         )
         writer.writeheader()
         writer.writerow(
             {
                 "doi": DOI, "sample_id": "1",
-                "gender_reported": "1", "gender_pct": '{"male": 40, "female": 60}',
-                "race_reported": "0", "race_pct": "{}",
-                "education_reported": "0", "education_pct": "{}",
-                "ses_reported": "0", "ses_value": "",
+                "gender": "1, 40% Male, 60% Female",
+                "race": "0", "education": "0", "ses": "0",
             }
         )
     rows = load_gold(str(gold_csv))
-    assert rows[0]["gender_reported"] == 1
-    assert rows[0]["gender_pct"] == {"male": 40, "female": 60}
-    assert rows[0]["ses_value"] is None
+    assert rows[0]["gender"] == {"reported": 1, "pct": {"male": 40, "female": 60}}
+    assert rows[0]["ses"] == {"reported": 0, "value": None}
 
 
 def test_write_per_doi_roundtrips(tmp_path):

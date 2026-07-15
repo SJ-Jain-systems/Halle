@@ -1,5 +1,4 @@
 import csv
-import json
 import os
 
 import pandas as pd
@@ -9,8 +8,7 @@ from src.analyze_trends import run
 FIELDS = [
     "doi", "sample_id", "subfield", "matched_subfields", "subject_level_1", "subject",
     "publication_date", "year", "stage", "lead_institution",
-    "gender_reported", "gender_pct", "race_reported", "race_pct",
-    "education_reported", "education_pct", "ses_reported", "ses_value",
+    "gender", "race", "education", "ses",
 ]
 
 ROWS = [
@@ -18,28 +16,19 @@ ROWS = [
         "doi": "10.1371/journal.pone.0000001", "sample_id": 1, "subfield": "Social psychology",
         "matched_subfields": "Social psychology", "subject_level_1": "", "subject": "",
         "publication_date": "2016-01-01", "year": 2016, "stage": "middle", "lead_institution": "UVA",
-        "gender_reported": 1, "gender_pct": json.dumps({"male": 40, "female": 60}),
-        "race_reported": 0, "race_pct": json.dumps({}),
-        "education_reported": 0, "education_pct": json.dumps({}),
-        "ses_reported": 0, "ses_value": "",
+        "gender": "1, 40% Male, 60% Female", "race": "0", "education": "0", "ses": "0",
     },
     {
         "doi": "10.1371/journal.pone.0000002", "sample_id": 1, "subfield": "Cognitive psychology",
         "matched_subfields": "Cognitive psychology", "subject_level_1": "", "subject": "",
         "publication_date": "2016-06-01", "year": 2016, "stage": "middle", "lead_institution": "UVA",
-        "gender_reported": 0, "gender_pct": json.dumps({}),
-        "race_reported": 0, "race_pct": json.dumps({}),
-        "education_reported": 0, "education_pct": json.dumps({}),
-        "ses_reported": 0, "ses_value": "",
+        "gender": "0", "race": "0", "education": "0", "ses": "0",
     },
     {
         "doi": "10.1371/journal.pone.0000003", "sample_id": 1, "subfield": "Clinical psychology",
         "matched_subfields": "Clinical psychology", "subject_level_1": "", "subject": "",
         "publication_date": "2021-01-01", "year": 2021, "stage": "covid", "lead_institution": "UVA",
-        "gender_reported": 1, "gender_pct": json.dumps({"male": 50, "female": 50}),
-        "race_reported": 0, "race_pct": json.dumps({}),
-        "education_reported": 0, "education_pct": json.dumps({}),
-        "ses_reported": 2, "ses_value": "30000",
+        "gender": "1, 50% Male, 50% Female", "race": "0", "education": "0", "ses": "2, 30000",
     },
 ]
 

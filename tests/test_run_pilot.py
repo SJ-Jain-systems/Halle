@@ -17,14 +17,10 @@ def _valid_row(doi):
     return {
         "doi": doi,
         "sample_id": 1,
-        "gender_reported": 0,
-        "gender_pct": {},
-        "race_reported": 0,
-        "race_pct": {},
-        "education_reported": 0,
-        "education_pct": {},
-        "ses_reported": 0,
-        "ses_value": None,
+        "gender": {"reported": 0, "pct": {}},
+        "race": {"reported": 0, "pct": {}},
+        "education": {"reported": 0, "pct": {}},
+        "ses": {"reported": 0, "value": None},
     }
 
 
@@ -70,14 +66,10 @@ class FakeClient:
                 {
                     "doi": DOI,
                     "sample_id": 1,
-                    "gender_reported": 1,
-                    "gender_pct": {"male": 45, "female": 55, "other": 0},
-                    "race_reported": 1,
-                    "race_pct": {"white": 60, "black": 20, "hispanic": 10, "asian": 5, "other": 5},
-                    "education_reported": 0,
-                    "education_pct": {},
-                    "ses_reported": 0,
-                    "ses_value": None,
+                    "gender": {"reported": 1, "pct": {"male": 45, "female": 55, "other": 0}},
+                    "race": {"reported": 1, "pct": {"white": 60, "black": 20, "hispanic": 10, "asian": 5, "other": 5}},
+                    "education": {"reported": 0, "pct": {}},
+                    "ses": {"reported": 0, "value": None},
                 }
             ]
         )
@@ -156,7 +148,7 @@ def test_echo_backend_generates_schema_valid_output():
     raw = client.generate(f"...\nArticle DOI: {doi}\n\nArticle text:\nblah")
     rows = parse_and_validate(raw, expected_doi=doi)  # would raise if malformed
     assert rows[0]["doi"] == doi
-    assert rows[0]["gender_reported"] == 0
+    assert rows[0]["gender"] == {"reported": 0, "pct": {}}
 
 
 def test_run_pilot_end_to_end_with_echo_backend(tmp_path):

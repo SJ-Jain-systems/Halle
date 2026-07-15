@@ -20,7 +20,10 @@ codes the same schema the model emits (`src/extract_demographics.py::REQUIRED_KE
    ```
    The unit of analysis is the *sample*, not the article — duplicate a row and
    bump `sample_id` for each additional participant sample an article reports.
-   The `*_pct` columns take a JSON object, e.g. `{"male": 45, "female": 55}`.
+   Each demographic is one combined column in the flat, human-readable form,
+   e.g. `gender` = `1, 45% Male, 55% Female`, `race` = `1, 60% White, 40% Black`
+   (0 = not reported, 1 = reported); `ses` = `2, 30000` on the 0/1/2 detail
+   scale.
 2. Hand-code every row, save as `data/pilot_gold.csv`.
 3. Run the model over the pilot (`src/run_pilot.py`), then score it against the
    gold set:
