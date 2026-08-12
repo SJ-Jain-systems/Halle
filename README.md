@@ -45,6 +45,7 @@ src/
   allofplos_client.py      local corpus directory access — no network calls
   subfields.py             time-stage buckets (subfields are taxonomy-driven, not hardcoded)
   build_corpus_index.py    scans the corpus, applies inclusion criteria, writes data/corpus_index.csv
+  subject_filter.py        drops non-human (animal-model) studies by subject taxonomy
   sample_articles.py       draws the 46-article stratified pilot sample
   extract_demographics.py  prompt + schema + validation for demographic rows
   model_backend.py         local GPU inference (vLLM / transformers) for Rivanna

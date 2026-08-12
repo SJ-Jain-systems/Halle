@@ -1,6 +1,10 @@
 import pytest
 
-from src.sample_articles import distinct_subfields, stratified_sample
+from src.sample_articles import (
+    distinct_subfields,
+    filter_out_non_human,
+    stratified_sample,
+)
 
 FAKE_SUBFIELDS = ["Social psychology", "Cognitive psychology"]
 
@@ -51,6 +55,22 @@ def test_stratified_sample_only_matches_exact_subfield_token():
     ]
     result = stratified_sample(rows, subfields=["Social psychology"], per_subfield=2)
     assert {r["doi"] for r in result} == {"b", "c"}
+
+
+def test_filter_out_non_human_drops_animal_rows():
+    # Safety net for sampling from an index built before the animal filter
+    # existed: rows whose `subject` column marks them as animal studies must be
+    # dropped, human rows kept.
+    rows = [
+        {"doi": "human", "matched_subfields": "Social psychology",
+         "subject": "Biology and life sciences;Psychology;Social psychology"},
+        {"doi": "salmon", "matched_subfields": "Behavior",
+         "subject": "Psychology;Behavior;Organisms;Animals;Vertebrates;Fish"},
+        {"doi": "mouse", "matched_subfields": "Behavior",
+         "subject": "Psychology;Behavior;Model organisms;Mouse models"},
+    ]
+    kept = filter_out_non_human(rows)
+    assert {r["doi"] for r in kept} == {"human"}
 
 
 def test_distinct_subfields_collects_all_present():

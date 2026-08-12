@@ -24,6 +24,7 @@ import logging
 from src.allofplos_client import DEFAULT_CORPUS_DIR, iter_corpus_xml
 from src.jats_xml import ArticleMetadata, parse_metadata
 from src.subfields import stage_for_date
+from src.subject_filter import non_human_subject_reason
 
 logger = logging.getLogger(__name__)
 
@@ -48,17 +49,26 @@ CSV_FIELDS = [
 ]
 
 
-def passes_inclusion_criteria(meta: ArticleMetadata) -> tuple[bool, list[str]]:
+def passes_inclusion_criteria(meta: ArticleMetadata) -> tuple[bool, list[str], str | None]:
+    """Returns ``(ok, matched_subfields, exclusion_reason)``. When ``ok`` is
+    False, ``exclusion_reason`` is a short category naming why the article was
+    dropped (used for the run summary); it is ``None`` when the article is
+    kept."""
     if TARGET_JOURNAL_SUBSTRING not in meta.journal.lower():
-        return False, []
+        return False, [], "journal"
     if meta.article_type != TARGET_ARTICLE_TYPE:
-        return False, []
+        return False, [], "article_type"
     if meta.publication_date is None or not (MIN_YEAR <= meta.publication_date.year <= MAX_YEAR):
-        return False, []
+        return False, [], "date"
     subfields = meta.psychology_subfields
     if not subfields:
-        return False, []
-    return True, subfields
+        return False, [], "not_psychology"
+    # Non-human (animal-model / model-organism) studies have no human
+    # demographics to encode, so they must never reach the sample or the LLM
+    # test — drop them by their subject taxonomy. See src/subject_filter.py.
+    if non_human_subject_reason(meta.subject) is not None:
+        return False, [], "non_human"
+    return True, subfields, None
 
 
 def to_row(meta: ArticleMetadata, subfields: list[str]) -> dict:
@@ -81,6 +91,7 @@ def to_row(meta: ArticleMetadata, subfields: list[str]) -> dict:
 def build_index(corpus_dir: str, out_path: str, log_every: int = 5000) -> int:
     kept = 0
     scanned = 0
+    excluded_non_human = 0
     # Materialize the file list up front so we can log a total and give a
     # meaningful "scanned N/TOTAL" progress readout with an implied ETA.
     xml_paths = list(iter_corpus_xml(corpus_dir))
@@ -96,16 +107,22 @@ def build_index(corpus_dir: str, out_path: str, log_every: int = 5000) -> int:
             except Exception:
                 logger.warning("Failed to parse %s, skipping", xml_path, exc_info=True)
                 continue
-            ok, subfields = passes_inclusion_criteria(meta)
+            ok, subfields, reason = passes_inclusion_criteria(meta)
             if ok:
                 writer.writerow(to_row(meta, subfields))
                 kept += 1
+            elif reason == "non_human":
+                excluded_non_human += 1
             if scanned % log_every == 0:
                 # Flush both the log and the CSV so `tail`/`wc -l` show live
                 # progress instead of sitting empty behind block buffering.
                 logger.info("Scanned %d/%d articles, kept %d so far", scanned, total, kept)
                 f.flush()
-    logger.info("Done: scanned %d articles, kept %d matching inclusion criteria", scanned, kept)
+    logger.info(
+        "Done: scanned %d articles, kept %d matching inclusion criteria "
+        "(dropped %d psychology-tagged articles as non-human/animal studies)",
+        scanned, kept, excluded_non_human,
+    )
     return kept
 
 

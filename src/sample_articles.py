@@ -12,6 +12,8 @@ import logging
 import os
 import random
 
+from src.subject_filter import non_human_subject_reason
+
 logger = logging.getLogger(__name__)
 
 CSV_FIELDS = [
@@ -100,6 +102,22 @@ def write_csv(articles: list[dict], out_path: str) -> None:
             writer.writerow(article)
 
 
+def filter_out_non_human(rows: list[dict]) -> list[dict]:
+    """Drop any article whose subject taxonomy marks it as a non-human
+    (animal-model / model-organism) study, so it can never be drawn into the
+    manual-encoding sample or the LLM test set (src/subject_filter.py).
+
+    build_corpus_index.py already applies this filter when writing the index,
+    so on a freshly built index this drops nothing. It is repeated here as a
+    safety net: sampling from an index built before this filter existed (or by
+    hand) must still not surface animal studies to a coder."""
+    kept = [r for r in rows if non_human_subject_reason(r.get("subject")) is None]
+    dropped = len(rows) - len(kept)
+    if dropped:
+        logger.info("Dropped %d/%d index rows as non-human/animal studies", dropped, len(rows))
+    return kept
+
+
 def filter_to_local_xml(rows: list[dict]) -> list[dict]:
     """Drop rows whose xml_path isn't present on disk — ~6% of the Solr index
     is articles (mostly very recent) not in the local corpus snapshot, which
@@ -120,7 +138,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    rows = filter_to_local_xml(load_index(args.index))
+    rows = filter_out_non_human(filter_to_local_xml(load_index(args.index)))
     articles = stratified_sample(rows, per_subfield=args.per_subfield, seed=args.seed)
     write_csv(articles, args.out)
     subfields_covered = sorted({a["subfield"] for a in articles})
