@@ -251,3 +251,33 @@ def get_extraction_text(xml_path: str) -> str:
         return "".join(body.itertext()).strip()
 
     return "\n\n".join(priority_text + other_text)
+
+
+def get_screening_text(xml_path: str) -> str:
+    """Title + Methods/Participants/Sample/Procedure section text, for the
+    animal-model text screen (``subject_filter.animal_text_reason``).
+
+    Scoped to the title and those sections rather than the whole body on
+    purpose: a study names its subjects (mice, C57BL/6, an IACUC statement)
+    where it describes its methods, while intro/discussion prose in a *human*
+    paper may cite animal-model literature — so scanning the whole body would
+    invite false positives. Falls back to the full extraction text if the
+    article has no recognizable Methods section.
+    """
+    tree = parse_tree(xml_path)
+    title = get_title(tree)
+    body = tree.find(".//body")
+    if body is None:
+        return title
+
+    methods: list[str] = []
+    for sec in body.findall("sec"):
+        all_titles = " ".join(t.text or "" for t in sec.findall(".//title"))
+        if any(kw in all_titles.lower() for kw in SECTION_TITLE_KEYWORDS):
+            methods.append("".join(sec.itertext()).strip())
+
+    if not methods:
+        # No labelled Methods section — fall back to the whole body so a
+        # short-form article isn't screened on its title alone.
+        methods.append(get_extraction_text(xml_path))
+    return title + "\n\n" + "\n\n".join(methods)
