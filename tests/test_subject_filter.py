@@ -1,9 +1,16 @@
+import os
+
 import pytest
 
+from src.jats_xml import get_screening_text
 from src.subject_filter import (
+    animal_text_reason,
     is_human_subject_study,
+    non_human_reason,
     non_human_subject_reason,
 )
+
+FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 
 # Subject-tag sets modelled on the animal-model articles the pilot coders
 # flagged (Manual_Encoding_1: salmon, junco, mouse, rats, bonobos, planaria,
@@ -119,3 +126,69 @@ def test_reason_names_the_matched_terms():
     reason = non_human_subject_reason(["Organisms", "Animals", "Vertebrates", "Fish"])
     assert "animals" in reason
     assert "fish" in reason
+
+
+# --- Layer 2: article-text screen -------------------------------------------
+
+# Human-subjects text that must NOT be flagged. Includes the two deliberate
+# traps: a *computer* mouse in a cognitive task, and an intro that cites
+# animal-model literature.
+HUMAN_TEXTS = [
+    "Participants moved the computer mouse to the target; mouse-tracking "
+    "trajectories were recorded. The study was approved by the university IRB.",
+    "While animal models of depression implicate the hippocampus, we tested "
+    "128 human adults on a spatial memory task.",
+    "Ninety undergraduates rated emotional faces. No animals were involved.",
+]
+
+ANIMAL_TEXTS = [
+    ("C57BL/6 mice were housed in cages; procedures approved by the IACUC.",
+     ["mice", "C57BL"]),
+    ("Male Sprague-Dawley rats were tested; animals were euthanized after.",
+     ["rats", "Sprague-Dawley"]),
+    ("We recorded from zebrafish larvae (Danio rerio).", ["zebrafish"]),
+    ("Adult Drosophila melanogaster were reared at 25C.", ["Drosophila"]),
+    ("Two rhesus macaques performed the task (non-human primates).", ["macaque"]),
+]
+
+
+@pytest.mark.parametrize("text", HUMAN_TEXTS)
+def test_animal_text_screen_keeps_human_text(text):
+    assert animal_text_reason(text) is None
+
+
+@pytest.mark.parametrize("text,expected", ANIMAL_TEXTS)
+def test_animal_text_screen_flags_animal_text(text, expected):
+    reason = animal_text_reason(text)
+    assert reason is not None
+    for marker in expected:
+        assert marker in reason
+
+
+def test_animal_text_screen_empty():
+    assert animal_text_reason("") is None
+    assert animal_text_reason(None) is None
+
+
+def test_mouse_cognition_fixture_is_caught_only_by_text_layer():
+    # The exact leak scenario: a Cognitive-psychology mouse study PLOS tagged
+    # with NO organism term. Layer 1 (taxonomy) misses it; layer 2 (text) must
+    # catch it, and the combined screen must reject it.
+    xml = os.path.join(FIXTURES, "mouse_cognition.xml")
+    taxonomy_subjects = ["Biology and life sciences", "Psychology",
+                         "Cognitive psychology", "Learning and memory"]
+    assert non_human_subject_reason(taxonomy_subjects) is None      # layer 1 blind
+
+    text = get_screening_text(xml)
+    assert animal_text_reason(text) is not None                    # layer 2 sees it
+    assert non_human_reason(taxonomy_subjects, text) is not None    # combined rejects
+    assert not is_human_subject_study(taxonomy_subjects, text)
+
+
+def test_screening_text_scopes_to_methods_not_intro():
+    # get_screening_text pulls the title + Methods; an animal term buried only
+    # in an intro citation would be outside its scope (guards false positives).
+    xml = os.path.join(FIXTURES, "mouse_cognition.xml")
+    text = get_screening_text(xml).lower()
+    assert "c57bl" in text and "iacuc" in text     # from Methods
+    assert "studied across many species" not in text  # Introduction excluded

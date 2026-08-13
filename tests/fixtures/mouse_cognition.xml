@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<article article-type="research-article">
+  <front>
+    <journal-meta>
+      <journal-title-group>
+        <journal-title>PLOS ONE</journal-title>
+      </journal-title-group>
+    </journal-meta>
+    <article-meta>
+      <article-id pub-id-type="doi">10.1371/journal.pone.0135238</article-id>
+      <title-group>
+        <article-title>Spatial working memory and reversal learning in a mouse model</article-title>
+      </title-group>
+      <pub-date pub-type="epub">
+        <day>5</day><month>8</month><year>2015</year>
+      </pub-date>
+      <!-- Note: tagged ONLY under Cognitive psychology, with NO Organisms /
+           Animals / Model-organisms subject term. This reproduces the real
+           leak: the taxonomy layer cannot see that it is an animal study. -->
+      <article-categories>
+        <subj-group subj-group-type="Discipline">
+          <subject>Biology and life sciences</subject>
+          <subj-group>
+            <subject>Psychology</subject>
+            <subj-group>
+              <subject>Cognitive psychology</subject>
+              <subj-group>
+                <subject>Learning and memory</subject>
+              </subj-group>
+            </subj-group>
+          </subj-group>
+        </subj-group>
+      </article-categories>
+    </article-meta>
+  </front>
+  <body>
+    <sec>
+      <title>Introduction</title>
+      <p>Working memory has been studied across many species.</p>
+    </sec>
+    <sec>
+      <title>Materials and Methods</title>
+      <sec>
+        <title>Animals</title>
+        <p>Forty male C57BL/6 mice (aged 8-10 weeks) were housed under a 12h
+        light/dark cycle. All procedures were approved by the Institutional
+        Animal Care and Use Committee (IACUC). After testing, animals were
+        euthanized.</p>
+      </sec>
+    </sec>
+  </body>
+</article>

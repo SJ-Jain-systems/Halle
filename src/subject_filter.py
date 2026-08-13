@@ -1,35 +1,45 @@
-"""Filter out non-human-subject articles by their PLOS subject taxonomy.
+"""Filter out non-human-subject articles, so animal studies never reach the
+manual-encoding sample or the LLM test set.
 
 The demographic-representativeness study only makes sense for *human* studies:
 an article on rats, salmon, wombats or *Drosophila* has no gender / race /
 education / SES to encode, and a coder who is handed one either wastes time or
 (worse) logs zeros that pollute the trend analysis and any LLM benchmark built
-on the same rows. So animal-model articles must be dropped *before* an article
-is ever drawn into the manual-encoding sample or the model test set.
+on the same rows.
 
-This is done "by subject area" — PLOS tags every article with its full subject
-taxonomy, and a non-human-animal study always carries at least one term from
-the ``Organisms > Animals`` branch (or the ``Model organisms`` / ``Zoology``
-branches), while a human study does not. We key off that rather than trying to
-read the body text, so the decision is cheap and taxonomy-driven, matching how
-the rest of the pipeline treats subfields (``jats_xml.get_psychology_subfields``).
+Two independent layers, because neither is sufficient alone:
 
-Design notes / guardrails:
+1. **Subject taxonomy** (``non_human_subject_reason``). PLOS usually tags a
+   non-human study with a term from the ``Organisms > Animals`` branch (or
+   ``Model organisms`` / ``Zoology``), which a human study doesn't carry. Cheap
+   and taxonomy-driven, matching how the pipeline treats subfields. *But* PLOS
+   tagging is inconsistent — some genuine animal studies (e.g. a mouse
+   cognition paper filed only under "Cognitive psychology") carry **no**
+   organism tag at all, so this layer misses them.
+
+2. **Article text** (``animal_text_reason``). A scan of the title + Methods
+   for high-precision animal-model markers — plural/'-ine' animal words
+   (``mice``, ``murine``, ``rodents``), lab strain names (``C57BL/6``,
+   ``Sprague-Dawley``, ``Wistar``), Latin binomials, non-human-primate terms,
+   and animal-ethics-committee statements (``IACUC`` / "Institutional Animal
+   Care and Use Committee" — the animal analogue of a human IRB statement).
+   These catch the studies layer 1 misses.
+
+Guardrails against dropping real human studies:
 
 * Humans are, taxonomically, animals too. PLOS tags human-subjects work with
-  ``Humans`` / ``Homo sapiens`` (and files it under ``People and places`` and
-  ``Medicine and health sciences``). So an explicit human marker *vetoes*
-  exclusion — an article tagged both ``Primates`` and ``Humans`` (e.g. a
-  human/ape comparison whose human data we *do* want) is kept.
-* Matching is on the high-level branch terms (``Animals``, ``Vertebrates``,
-  ``Invertebrates``, ``Zoology``, ``Animal models``, ...) plus a handful of
-  common taxa and named model organisms. Any genuine animal article carries at
-  least one of these, so we don't need to enumerate every species; a bare
-  species tag we miss is still caught by its ``Animals`` / ``Vertebrates``
-  parent term. Matching is exact-term (case-insensitive), not substring, so
-  "Human factors" or "Humanities" can never trip the animal set.
+  ``Humans`` / ``Homo sapiens``; an explicit human marker *vetoes* taxonomy
+  exclusion, so a human/ape comparison whose human data we want is kept.
+* Taxonomy matching is exact-term (case-insensitive), never substring, so
+  "Human factors" or "Humanities" can't trip the animal set.
+* The text layer deliberately omits low-precision cues: bare "mouse" (a
+  *computer* mouse in cognitive tasks) and "animal model(s)" (an intro phrase
+  in human papers that cite animal literature). Only markers that essentially
+  never appear in a human-subjects psychology paper are used.
 """
 from __future__ import annotations
+
+import re
 
 # Exact taxonomy terms (lower-cased) that mark a study's subject as a
 # non-human organism. Grouped by PLOS thesaurus branch for readability; the
@@ -98,6 +108,36 @@ _ANIMAL_BRANCH_TERMS: frozenset[str] = frozenset(
         "Danio rerio",
         "Caenorhabditis elegans",
         "Xenopus",
+        # Latin binomials / genera PLOS often uses as the model-organism leaf
+        # tag instead of the common name — a real gap: an article tagged only
+        # "Mus musculus" (not "Mice"/"Rodents") would otherwise pass.
+        "Mus musculus",
+        "Mus",
+        "Rattus norvegicus",
+        "Rattus",
+        "Macaca mulatta",
+        "Macaca",
+        "Macaques",
+        "Gallus gallus",
+        "Sus scrofa",
+        "Bos taurus",
+        "Canis",
+        "Felis",
+        # More vertebrate/invertebrate class-level and common taxa.
+        "Rodentia",
+        "Muridae",
+        "Aves",
+        "Mammalia",
+        "Actinopterygii",
+        "Teleostei",
+        "Amphibia",
+        "Reptilia",
+        "Chordata",
+        "Non-human primates",
+        "Nonhuman primates",
+        "Marine mammals",
+        "Bats",
+        "Sea lions",
         # A few named taxa that show up as leaf tags in the pilot set, so an
         # article tagged only at the species level is still caught even if its
         # parent branch term is somehow absent.
@@ -121,6 +161,42 @@ _HUMAN_TERMS: frozenset[str] = frozenset(
         "Humans",
         "Human",
         "Homo sapiens",
+    )
+)
+
+# High-precision animal-model markers for the article-text layer. Each is
+# chosen to essentially never appear in a human-subjects psychology paper.
+# Deliberately excluded: bare "mouse" (computer mouse in cognitive tasks) and
+# "animal model(s)" (human papers cite animal-model literature in the intro).
+# `(label, pattern)` — the label is what the reason string reports.
+_ANIMAL_TEXT_PATTERNS: tuple[tuple[str, "re.Pattern[str]"], ...] = tuple(
+    (label, re.compile(pat, re.IGNORECASE))
+    for label, pat in (
+        ("mice", r"\bmice\b"),
+        ("murine", r"\bmurine\b"),
+        ("rodent", r"\brodents?\b"),
+        ("rats", r"\brats\b"),
+        ("C57BL", r"\bc57bl\b"),
+        ("BALB/c", r"\bbalb/?c\b"),
+        ("Sprague-Dawley", r"\bsprague[-\s]dawley\b"),
+        ("Wistar", r"\bwistar\b"),
+        ("knockout mice", r"\bknock-?out mice\b"),
+        ("transgenic mice", r"\btransgenic mice\b"),
+        ("Mus musculus", r"\bmus musculus\b"),
+        ("Rattus", r"\brattus\b"),
+        ("zebrafish", r"\bzebrafish\b"),
+        ("Danio rerio", r"\bdanio rerio\b"),
+        ("Drosophila", r"\bdrosophila\b"),
+        ("fruit fly", r"\bfruit fl(?:y|ies)\b"),
+        ("Xenopus", r"\bxenopus\b"),
+        ("C. elegans", r"\b(?:caenorhabditis|c\.?\s?elegans)\b"),
+        ("macaque", r"\bmacaques?\b"),
+        ("non-human primate", r"\bnon[-\s]?human primates?\b"),
+        ("IACUC", r"\biacuc\b"),
+        ("institutional animal care", r"\binstitutional animal care\b"),
+        ("animal care and use committee", r"\banimal care and use committee\b"),
+        ("animal ethics committee", r"\banimal (?:research )?ethics committee\b"),
+        ("euthanized/sacrificed", r"\bwere (?:euthan(?:ized|ised)|sacrificed|perfused|decapitated)\b"),
     )
 )
 
@@ -181,7 +257,36 @@ def non_human_subject_reason(subjects: object) -> str | None:
     return None
 
 
-def is_human_subject_study(subjects: object) -> bool:
-    """Convenience inverse of :func:`non_human_subject_reason`: ``True`` when
-    the article is *not* flagged as a non-human study."""
-    return non_human_subject_reason(subjects) is None
+def animal_text_reason(text: str | None) -> str | None:
+    """Return a reason string if the article *text* contains a high-precision
+    animal-model marker, else ``None``.
+
+    This is the second layer: it catches animal studies that PLOS left without
+    an organism subject tag (so ``non_human_subject_reason`` can't see them).
+    Pass the title + Methods/Participants text — see
+    ``jats_xml.get_screening_text`` — not the whole body, to keep the scan
+    focused on where the study describes its subjects.
+
+    Every pattern in ``_ANIMAL_TEXT_PATTERNS`` is one that essentially never
+    appears in a human-subjects psychology paper; the reason names the markers
+    found so a reviewer can sanity-check any exclusion.
+    """
+    if not text:
+        return None
+    hits = [label for label, pat in _ANIMAL_TEXT_PATTERNS if pat.search(text)]
+    if hits:
+        return "animal-model markers in text: " + ", ".join(hits)
+    return None
+
+
+def non_human_reason(subjects: object = None, text: str | None = None) -> str | None:
+    """Combined screen: return the first reason this article is non-human, from
+    either the subject taxonomy (layer 1) or the article text (layer 2), else
+    ``None``. Callers with only one signal available can pass just that one."""
+    return non_human_subject_reason(subjects) or animal_text_reason(text)
+
+
+def is_human_subject_study(subjects: object = None, text: str | None = None) -> bool:
+    """Convenience inverse of :func:`non_human_reason`: ``True`` when neither
+    layer flags the article as non-human."""
+    return non_human_reason(subjects, text) is None

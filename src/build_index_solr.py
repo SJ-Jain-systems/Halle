@@ -20,12 +20,14 @@ import logging
 import os
 
 from src.allofplos_client import DEFAULT_CORPUS_DIR
+from src.jats_xml import get_screening_text
 from src.solr_client import (
     doi_to_xml_path,
     iter_psychology_articles,
     psychology_subfields_from_paths,
 )
 from src.subfields import stage_for_date
+from src.subject_filter import animal_text_reason, non_human_subject_reason
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +54,28 @@ def _parse_date(value: str) -> dt.date | None:
         return None
 
 
+def _text_screen_reason(xml_path: str) -> str | None:
+    """Animal-model text screen for one article; returns a reason or None.
+    Never raises — a parse failure just means "no text signal", so a bad file
+    can't abort the whole index build."""
+    if not os.path.exists(xml_path):
+        return None
+    try:
+        return animal_text_reason(get_screening_text(xml_path))
+    except Exception:
+        logger.warning("Text screen failed to parse %s, skipping screen", xml_path, exc_info=True)
+        return None
+
+
 def build_index(out_path: str, corpus_dir: str, start_year: int = MIN_YEAR,
-                end_year: int = MAX_YEAR, log_every: int = 1000) -> int:
+                end_year: int = MAX_YEAR, log_every: int = 1000,
+                screen_text: bool = True) -> int:
     kept = 0
     seen = 0
     no_subfield = 0
     missing_xml = 0
+    excluded_taxonomy = 0
+    excluded_text = 0
     with open(out_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
         writer.writeheader()
@@ -71,11 +89,21 @@ def build_index(out_path: str, corpus_dir: str, start_year: int = MIN_YEAR,
                 # parser and skip these.
                 no_subfield += 1
                 continue
+            # Layer 1: subject taxonomy. Cheap, no file read.
+            if non_human_subject_reason(subjects) is not None:
+                excluded_taxonomy += 1
+                continue
             doi = doc["id"]
-            pub_date = _parse_date(doc.get("publication_date", ""))
             xml_path = doi_to_xml_path(doi, corpus_dir)
             if not os.path.exists(xml_path):
                 missing_xml += 1
+            # Layer 2: article text (Methods) — catches animal studies PLOS
+            # left without an organism subject tag. Only for articles present
+            # locally; skipped entirely with --no-text-screen.
+            elif screen_text and _text_screen_reason(xml_path) is not None:
+                excluded_text += 1
+                continue
+            pub_date = _parse_date(doc.get("publication_date", ""))
             writer.writerow({
                 "doi": doi,
                 "publication_date": pub_date.isoformat() if pub_date else "",
@@ -88,12 +116,17 @@ def build_index(out_path: str, corpus_dir: str, start_year: int = MIN_YEAR,
             })
             kept += 1
             if seen % log_every == 0:
-                logger.info("Fetched %d articles, kept %d", seen, kept)
+                logger.info(
+                    "Fetched %d, kept %d (dropped non-human: %d taxonomy + %d text)",
+                    seen, kept, excluded_taxonomy, excluded_text,
+                )
                 f.flush()
     logger.info(
         "Done: %d Solr hits, kept %d (skipped %d with no Psychology-node subfield); "
+        "dropped %d non-human (%d by subject taxonomy, %d by article-text screen); "
         "%d kept articles have no local XML file",
-        seen, kept, no_subfield, missing_xml,
+        seen, kept, no_subfield, excluded_taxonomy + excluded_text,
+        excluded_taxonomy, excluded_text, missing_xml,
     )
     return kept
 
@@ -105,8 +138,14 @@ def main() -> None:
     parser.add_argument("--corpus-dir", default=DEFAULT_CORPUS_DIR)
     parser.add_argument("--start-year", type=int, default=MIN_YEAR)
     parser.add_argument("--end-year", type=int, default=MAX_YEAR)
+    parser.add_argument(
+        "--no-text-screen", action="store_true",
+        help="Skip the article-text animal screen (layer 2). Faster (no local "
+             "XML reads), but misses animal studies PLOS didn't tag as such.",
+    )
     args = parser.parse_args()
-    build_index(args.out, args.corpus_dir, args.start_year, args.end_year)
+    build_index(args.out, args.corpus_dir, args.start_year, args.end_year,
+                screen_text=not args.no_text_screen)
 
 
 if __name__ == "__main__":
