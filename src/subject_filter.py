@@ -126,16 +126,37 @@ _HUMAN_TERMS: frozenset[str] = frozenset(
 
 
 def _normalize(subjects: object) -> set[str]:
-    """Accept either a list of subject terms or a single ';'-joined string
-    (the form stored in the corpus-index ``subject`` column) and return a set
-    of lower-cased, stripped terms."""
+    """Return the full set of individual taxonomy *terms* (lower-cased), from
+    whatever shape the caller has.
+
+    Two producers feed this, and they store subjects differently:
+
+    * ``src/build_corpus_index.py`` (JATS XML path) passes a list of individual
+      terms, e.g. ``["Animals", "Vertebrates", "Fish"]``.
+    * ``src/build_index_solr.py`` (the Solr discovery path actually run on
+      Rivanna) stores the ``subject`` column as ';'-joined **slash-delimited
+      paths**, e.g.
+      ``"/Biology and life sciences/Organisms/Animals/Vertebrates/Fish"``.
+
+    So we split on both ``;`` (multiple subjects) and ``/`` (path segments
+    within one subject) — the same segmentation ``solr_client`` uses — which
+    turns a path into its component terms and leaves an already-split list of
+    terms unchanged. Without the ``/`` split an entire Solr path would be one
+    unmatchable "term" and every animal study would pass straight through.
+    """
     if subjects is None:
         return set()
     if isinstance(subjects, str):
-        parts = subjects.split(";")
+        raw = subjects.split(";")
     else:
-        parts = list(subjects)
-    return {p.strip().lower() for p in parts if p and p.strip()}
+        raw = list(subjects)
+    terms: set[str] = set()
+    for item in raw:
+        for segment in str(item).split("/"):
+            segment = segment.strip().lower()
+            if segment:
+                terms.add(segment)
+    return terms
 
 
 def non_human_subject_reason(subjects: object) -> str | None:
@@ -144,7 +165,8 @@ def non_human_subject_reason(subjects: object) -> str | None:
     ``None``.
 
     ``subjects`` may be a list of taxonomy terms (``ArticleMetadata.subject``)
-    or a ';'-joined string (the corpus-index ``subject`` column).
+    or a ';'-joined string of terms or slash-delimited Solr paths (the
+    ``subject`` column written by either index builder) — see ``_normalize``.
 
     An explicit human marker (``Humans`` / ``Homo sapiens``) always wins, so a
     study that includes human participants is never excluded even if it also

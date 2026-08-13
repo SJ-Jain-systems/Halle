@@ -77,6 +77,38 @@ def test_accepts_semicolon_joined_string():
     assert non_human_subject_reason("Psychology;Social psychology") is None
 
 
+def test_accepts_solr_slash_delimited_paths():
+    # build_index_solr.py (the path actually run on Rivanna) stores the subject
+    # column as ';'-joined *slash-delimited* Solr paths. The filter must split
+    # path segments into terms, or every animal study slips through.
+    animal = (
+        "/Biology and life sciences/Psychology/Behavior;"
+        "/Biology and life sciences/Zoology/Animal behavior;"
+        "/Biology and life sciences/Organisms/Animals/Vertebrates/Fish"
+    )
+    reason = non_human_subject_reason(animal)
+    assert reason is not None
+    assert "fish" in reason
+
+    human = (
+        "/Biology and life sciences/Psychology/Social psychology;"
+        "/Medicine and health sciences/Mental health and psychiatry"
+    )
+    assert non_human_subject_reason(human) is None
+
+    # Human veto still applies when 'Humans' appears as a path leaf.
+    veto = (
+        "/Biology and life sciences/Organisms/Animals/Vertebrates/Mammals/Primates;"
+        "/Biology and life sciences/Organisms/Eukaryota/Animals/Vertebrates/Humans"
+    )
+    assert non_human_subject_reason(veto) is None
+
+    # A single path passed as a one-element list (not ';'-joined) also works.
+    assert non_human_subject_reason(
+        ["/Biology and life sciences/Organisms/Animals/Invertebrates/Insects"]
+    ) is not None
+
+
 def test_empty_or_missing_subjects_is_not_flagged():
     assert non_human_subject_reason(None) is None
     assert non_human_subject_reason([]) is None
