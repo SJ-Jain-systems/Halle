@@ -129,8 +129,8 @@ python -m src.make_gold_template \
 the completed gold CSV, aligned by `(doi, sample_id)`, and reports per-field
 agreement mapped to the rubric's four axes:
 
-- **Coverage** — do the `*_reported` flags match?
-- **Numeric accuracy** — do the reported `*_pct` breakdowns agree (within a
+- **Coverage** — do the per-demographic `reported` flags match?
+- **Numeric accuracy** — do the reported `pct` breakdowns agree (within a
   percentage-point tolerance)?
 - **Multi-sample handling** — one gold row per sample, matched by the model?
 - **Schema adherence** — do model rows carry exactly the required keys?

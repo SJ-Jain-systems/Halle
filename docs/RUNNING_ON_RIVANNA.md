@@ -26,10 +26,11 @@ allofplos corpus (local XML mirror)
 data/corpus_index.csv           ← full filtered population (brief item 3)
         │  src/sample_articles.py
         ▼
-data/sampled_articles.csv       ← 46-article pilot
+data/sampled_articles.csv       ← 100-article pilot (docs/DECISIONS.md #2)
         │  src/run_pilot.py     (Llama-3.3-70B-Instruct, docs/DECISIONS.md #3)
         ▼
-results/<model>/<doi>.json      ← QA spot-check against docs/SCORING_RUBRIC.md
+results/<model>/<doi>.json      ← recall/precision/accuracy gate vs consensus
+                                   gold (src/merge_gold.py, src/score_pilot.py)
         │
         │  src/run_pipeline.py (chosen model, full corpus_index.csv)
         ▼
@@ -156,10 +157,12 @@ python -m src.sample_articles --index data/corpus_index.csv --out data/sampled_a
 ```
 
 Fast, CPU-only — fine to run directly on the login node. Writes
-`data/sampled_articles.csv`, 2 articles per psychology subfield present in the
-index (`docs/DECISIONS.md` #2 — this is 2×N articles for N subfields, not a
-fixed 10, since PLOS uses more than the brief's five). Re-run with `--seed <n>`
-for a different draw; the default seed (42) is reproducible.
+`data/sampled_articles.csv`, **100 articles** (`docs/DECISIONS.md` #2): a floor
+of 2 per psychology subfield present in the index, then topped up proportionally
+to each subfield's size. Size/floor come from `config.yaml`
+(`validation.pilot_size` / `min_per_subfield`); override with `--size` /
+`--min-per-subfield`. Re-run with `--seed <n>` for a different draw; the default
+seed (42) is reproducible.
 
 ## Step 4: pilot run — QA the chosen model before scaling up
 
@@ -189,14 +192,29 @@ Then submit the real pilot job:
 sbatch slurm/run_pilot.slurm
 ```
 
-Writes `results/meta-llama__Llama-3.3-70B-Instruct/<doi>.json` for all 46
+Writes `results/meta-llama__Llama-3.3-70B-Instruct/<doi>.json` for all 100
 pilot articles. The run is resumable: an article already written with
 `status: "ok"` is skipped, so a preempted job just picks up where it left off
 (pass `--overwrite` to force a full re-run). This isn't a model comparison — the
-model choice is settled (`docs/DECISIONS.md` #3) — it's a QA spot-check: score
-the output against `docs/SCORING_RUBRIC.md` (coverage, numeric accuracy, schema
-adherence, multi-sample handling) to catch a bad prompt or a parsing bug on 46
-articles rather than after burning GPU hours on the full corpus.
+model choice is settled (`docs/DECISIONS.md` #3) — it's the validation gate:
+score the output against the human gold set with `src/score_pilot.py`, which
+must clear recall/precision/accuracy ≥ 0.90 per variable and overall
+(`docs/DECISIONS.md` #4, `docs/SCORING_RUBRIC.md`), catching a bad prompt or a
+parsing bug on 100 articles rather than after burning GPU hours on the full
+corpus.
+
+Scoring (after the human gold is coded and merged — see
+`docs/SCORING_RUBRIC.md`):
+
+```bash
+# combine multiple coders -> consensus gold + inter-rater agreement
+python -m src.merge_gold --inputs data/gold_*.csv --out data/pilot_gold.csv \
+    --agreement-out results/inter_rater.csv
+
+# recall/precision/accuracy gate (exits non-zero if any threshold is missed)
+python -m src.score_pilot --gold data/pilot_gold.csv \
+    --out results/pilot_accuracy.csv --metrics-out results/pilot_metrics.csv
+```
 
 **If Llama-3.3-70B-Instruct doesn't fit your GPU allocation** (needs
 roughly 140GB+ of GPU memory in bf16 across the tensor-parallel group): drop

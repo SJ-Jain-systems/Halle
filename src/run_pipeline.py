@@ -20,13 +20,16 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import logging
 import os
 
 import yaml
 
-from src.extract_demographics import ExtractionValidationError, extract_demographics_from_xml
+from src.extract_demographics import (
+    ExtractionValidationError,
+    extract_demographics_from_xml,
+    format_field,
+)
 from src.model_backend import build_client
 
 logger = logging.getLogger(__name__)
@@ -42,14 +45,10 @@ OUTPUT_FIELDS = [
     "year",
     "stage",
     "lead_institution",
-    "gender_reported",
-    "gender_pct",
-    "race_reported",
-    "race_pct",
-    "education_reported",
-    "education_pct",
-    "ses_reported",
-    "ses_value",
+    "gender",
+    "race",
+    "education",
+    "ses",
 ]
 
 
@@ -102,14 +101,16 @@ def run(
                 continue
 
             for sample in samples:
-                # Serialize dict-valued fields to JSON text so they round-trip
-                # cleanly through CSV (csv.writer would otherwise fall back to
-                # Python repr(), which json.loads() can't parse back).
+                # Flatten each combined demographic into one human-readable
+                # column, e.g. gender -> "1, 60% Male, 40% Female" (0 = not
+                # reported). analyze_trends/score_pilot parse this back via
+                # extract_demographics.parse_field.
                 sample = {
                     **sample,
-                    "gender_pct": json.dumps(sample.get("gender_pct") or {}),
-                    "race_pct": json.dumps(sample.get("race_pct") or {}),
-                    "education_pct": json.dumps(sample.get("education_pct") or {}),
+                    "gender": format_field("gender", sample.get("gender")),
+                    "race": format_field("race", sample.get("race")),
+                    "education": format_field("education", sample.get("education")),
+                    "ses": format_field("ses", sample.get("ses")),
                 }
                 writer.writerow(
                     {

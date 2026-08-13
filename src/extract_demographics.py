@@ -8,22 +8,40 @@ three separate demographic samples yields three rows, all sharing the same
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 
 from src.jats_xml import get_extraction_text
 
+# One combined field per demographic (rather than a separate reported-flag and
+# percentage column each): gender/race/education carry {"reported": 0/1, "pct":
+# {...}} and ses carries {"reported": 0/1/2, "value": ...}. This is what the
+# model emits and what parse_and_validate() checks.
 REQUIRED_KEYS = {
     "doi",
     "sample_id",
-    "gender_reported",
-    "gender_pct",
-    "race_reported",
-    "race_pct",
-    "education_reported",
-    "education_pct",
-    "ses_reported",
-    "ses_value",
+    "gender",
+    "race",
+    "education",
+    "ses",
 }
+
+# Canonical subgroup order + display labels for the percentage demographics.
+# Order here is the order subgroups appear in the flat, human-readable form
+# (see format_field): "1, 60% White, 20% Black, ...".
+PCT_SUBGROUPS = {
+    "gender": [("male", "Male"), ("female", "Female"), ("other", "Other")],
+    "race": [
+        ("white", "White"),
+        ("black", "Black"),
+        ("hispanic", "Hispanic"),
+        ("asian", "Asian"),
+        ("other", "Other"),
+    ],
+    "education": [("college", "College"), ("no_college", "No college")],
+}
+PCT_FIELDS = ("gender", "race", "education")
+DEMOGRAPHIC_FIELDS = ("gender", "race", "education", "ses")
 
 EXTRACTION_PROMPT_TEMPLATE = """\
 You are coding a psychology research article for a systematic review of
@@ -36,15 +54,99 @@ participant sample described (an article may report more than one), extract:
 - socioeconomic status (optional): 0 = not reported, 1 = reported as a category only
   (low/medium/high, no numbers), 2 = reported with a specific numeric threshold
 
-Respond with ONLY a JSON array. Each element is one sample, with exactly these keys:
-doi, sample_id, gender_reported, gender_pct, race_reported, race_pct,
-education_reported, education_pct, ses_reported, ses_value.
+Respond with ONLY a JSON array. Each element is one sample. Combine each
+demographic into a single field, with EXACTLY these keys:
+
+  "doi", "sample_id",
+  "gender":    {{"reported": 0 or 1, "pct": {{"male": .., "female": .., "other": ..}}}},
+  "race":      {{"reported": 0 or 1, "pct": {{"white": .., "black": .., "hispanic": .., "asian": .., "other": ..}}}},
+  "education": {{"reported": 0 or 1, "pct": {{"college": .., "no_college": ..}}}},
+  "ses":       {{"reported": 0, 1, or 2, "value": <numeric threshold, category label, or null>}}
+
+`reported` is 1 when the demographic is reported for that sample and 0 when it
+isn't (for ses: 0 = not reported, 1 = category only such as low/medium/high,
+2 = reported with a specific numeric threshold). Set `pct` to {{}} when
+`reported` is 0.
 
 Article DOI: {doi}
 
 Article text:
 {article_text}
 """
+
+_PCT_TOKEN = re.compile(r"^\s*(-?[\d.]+)\s*%\s*(.+?)\s*$")
+
+
+def _fmt_num(value) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return str(int(number)) if number.is_integer() else str(number)
+
+
+def format_field(name: str, value) -> str:
+    """Serialize a combined demographic field to the flat, human-readable form
+    used in the output table and the gold sheet:
+
+        gender {"reported": 1, "pct": {"male": 60, "female": 40}}
+            -> "1, 60% Male, 40% Female"
+        race not reported ({"reported": 0, ...})   -> "0"
+        ses {"reported": 2, "value": 30000}        -> "2, 30000"
+
+    (0 = not reported, 1 = reported.)
+    """
+    value = value or {}
+    reported = int(value.get("reported") or 0)
+    if name == "ses":
+        raw = value.get("value")
+        if raw in (None, ""):
+            return str(reported)
+        return f"{reported}, {raw}"
+    if not reported:
+        return "0"
+    pct = value.get("pct") or {}
+    labels = dict(PCT_SUBGROUPS[name])
+    parts = ["1"]
+    for key, label in PCT_SUBGROUPS[name]:
+        if key in pct:
+            parts.append(f"{_fmt_num(pct[key])}% {label}")
+    # Preserve any non-canonical subgroup the model reported, rather than drop it.
+    for key, subval in pct.items():
+        if key not in labels:
+            parts.append(f"{_fmt_num(subval)}% {key.replace('_', ' ').title()}")
+    return ", ".join(parts)
+
+
+def parse_field(name: str, text) -> dict:
+    """Inverse of format_field: a flat string back into the combined dict.
+    Passes a dict straight through, so callers can hand it either form."""
+    if isinstance(text, dict):
+        return text
+    s = (text or "").strip()
+    if name == "ses":
+        if s == "":
+            return {"reported": 0, "value": None}
+        head, _, tail = s.partition(",")
+        reported = int(float(head.strip())) if head.strip() else 0
+        value = tail.strip() or None
+        return {"reported": reported, "value": value}
+    if s == "" or s == "0":
+        return {"reported": 0, "pct": {}}
+    parts = [p.strip() for p in s.split(",")]
+    reported = int(float(parts[0])) if parts[0] else 0
+    label_to_key = {label.lower(): key for key, label in PCT_SUBGROUPS[name]}
+    pct: dict = {}
+    for token in parts[1:]:
+        m = _PCT_TOKEN.match(token)
+        if not m:
+            continue
+        number = float(m.group(1))
+        number = int(number) if number.is_integer() else number
+        label = m.group(2).strip().lower()
+        key = label_to_key.get(label, label.replace(" ", "_"))
+        pct[key] = number
+    return {"reported": reported, "pct": pct}
 
 
 class ExtractionValidationError(ValueError):
@@ -93,7 +195,25 @@ def parse_and_validate(raw_output: str, expected_doi: str) -> list[dict]:
             raise ExtractionValidationError(
                 f"Row {i} doi {row['doi']!r} does not match article doi {expected_doi!r}"
             )
+        _validate_demographic_fields(row, i)
     return rows
+
+
+def _validate_demographic_fields(row: dict, i: int) -> None:
+    """Each combined demographic field must be an object with the expected
+    sub-keys — gender/race/education carry `reported`+`pct`, ses `reported`+
+    `value` — so a malformed field is caught here rather than downstream."""
+    for name in PCT_FIELDS:
+        field = row[name]
+        if not isinstance(field, dict) or "reported" not in field or "pct" not in field:
+            raise ExtractionValidationError(
+                f"Row {i} field {name!r} must be an object with 'reported' and 'pct'"
+            )
+    ses = row["ses"]
+    if not isinstance(ses, dict) or "reported" not in ses or "value" not in ses:
+        raise ExtractionValidationError(
+            f"Row {i} field 'ses' must be an object with 'reported' and 'value'"
+        )
 
 
 def extract_demographics(doi: str, article_text: str, client: ModelClient) -> list[dict]:

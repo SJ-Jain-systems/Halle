@@ -84,6 +84,51 @@ def test_distinct_subfields_collects_all_present():
     }
 
 
+def _rows_with_sizes(sizes: dict) -> list[dict]:
+    rows = []
+    for subfield, n in sizes.items():
+        for i in range(n):
+            rows.append({"doi": f"{subfield[:4]}{i}", "matched_subfields": subfield})
+    return rows
+
+
+def test_stratified_sample_total_size_hits_target_with_floor_and_topup():
+    # 4 subfields, unequal sizes; ask for 20 total with a floor of 2 each.
+    sizes = {"A": 30, "B": 30, "C": 5, "D": 5}
+    rows = _rows_with_sizes(sizes)
+    result = stratified_sample(
+        rows, subfields=list(sizes), total_size=20, min_per_subfield=2, seed=1
+    )
+    assert len(result) == 20
+    counts = {}
+    for r in result:
+        counts[r["subfield"]] = counts.get(r["subfield"], 0) + 1
+    # Every subfield keeps at least the floor...
+    assert min(counts.values()) >= 2
+    assert set(counts) == set(sizes)
+    # ...and the big subfields get more than the small ones (proportional top-up).
+    assert counts["A"] > counts["C"]
+
+
+def test_stratified_sample_total_size_is_reproducible_with_seed():
+    sizes = {"A": 30, "B": 30, "C": 10}
+    rows = _rows_with_sizes(sizes)
+    first = stratified_sample(rows, subfields=list(sizes), total_size=25, min_per_subfield=2, seed=9)
+    second = stratified_sample(rows, subfields=list(sizes), total_size=25, min_per_subfield=2, seed=9)
+    assert [r["doi"] for r in first] == [r["doi"] for r in second]
+
+
+def test_stratified_sample_floor_wins_when_target_below_floor_total():
+    # 4 subfields × floor 2 = 8 minimum; a target of 5 can't undercut coverage.
+    sizes = {"A": 10, "B": 10, "C": 10, "D": 10}
+    rows = _rows_with_sizes(sizes)
+    result = stratified_sample(
+        rows, subfields=list(sizes), total_size=5, min_per_subfield=2, seed=1
+    )
+    assert len(result) == 8
+    assert {r["subfield"] for r in result} == set(sizes)
+
+
 def test_stratified_sample_auto_covers_all_subfields_and_skips_sparse():
     # Auto mode (subfields=None): stratify over every subfield present, but
     # silently skip ones without enough articles instead of erroring.

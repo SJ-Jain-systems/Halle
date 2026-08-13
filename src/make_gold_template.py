@@ -16,11 +16,18 @@ several independent samples gets one row per sample, all sharing its `doi` and
 numbered by `sample_id` (1, 2, ...). This template pre-fills one row per article
 with `sample_id=1`; duplicate a row and bump `sample_id` for each extra sample.
 
-The `*_pct` columns hold a JSON object, e.g. {"male": 45, "female": 55}, to
-match the model output. Leave them blank ({}) when the demographic is not
-reported. `ses_reported` is the 0/1/2 detail scale (0 = not reported,
-1 = category only, 2 = numeric threshold); put the numeric threshold, if any,
-in `ses_value`.
+Multiple blind coders code the same articles to reduce ground-truth bias
+(7/15 meeting): each fills the `coder` column with their initials, and the
+per-coder sheets are combined by src/merge_gold.py — which reports inter-rater
+agreement and writes a consensus gold set — before scoring.
+
+Each demographic is one combined column in the flat, human-readable form the
+pipeline uses (src/extract_demographics.format_field), e.g.
+`gender` = `1, 45% Male, 55% Female`, `race` = `1, 60% White, 40% Black`
+(0 = not reported, 1 = reported). Leave a cell blank or `0` when the
+demographic isn't reported. `ses` uses the 0/1/2 detail scale (0 = not
+reported, 1 = category only, 2 = numeric threshold) followed by the value if
+any, e.g. `2, 30000` or `1, low`.
 
 Optionally, --text-dir writes each article's methods-first extraction text
 (exactly what the model reads, via src/jats_xml.get_extraction_text) to a file,
@@ -34,35 +41,32 @@ import os
 
 from src.extract_demographics import REQUIRED_KEYS
 
-# Helper columns carried through for the coder's convenience (not scored), then
-# the schema columns they fill in. `doi` is both a helper and a schema key.
+# `coder` initials identify who coded the row (coding-meta, not a model field).
+# Helper columns are carried through for the coder's convenience (not scored),
+# then the schema columns they fill in. `doi` is both a helper and a schema key.
+CODING_META = ["coder"]
 HELPER_FIELDS = ["subfield", "title", "xml_path"]
 SCHEMA_FIELDS = [
     "doi",
     "sample_id",
-    "gender_reported",
-    "gender_pct",
-    "race_reported",
-    "race_pct",
-    "education_reported",
-    "education_pct",
-    "ses_reported",
-    "ses_value",
+    "gender",
+    "race",
+    "education",
+    "ses",
 ]
-TEMPLATE_FIELDS = ["doi"] + HELPER_FIELDS + [f for f in SCHEMA_FIELDS if f != "doi"]
+# DOI first, coder initials second (per the 7/15 meeting), then helpers + schema.
+TEMPLATE_FIELDS = ["doi"] + CODING_META + HELPER_FIELDS + [f for f in SCHEMA_FIELDS if f != "doi"]
 
-# Blank template row: coder fills the schema fields. `_pct` cells default to an
-# empty JSON object so an untouched cell still parses.
+# Blank template row: coder fills each combined demographic column in the flat
+# form (e.g. "1, 45% Male, 55% Female"). Cells default to blank, which parses
+# as "not reported".
 _BLANK_CODING = {
+    "coder": "",
     "sample_id": 1,
-    "gender_reported": "",
-    "gender_pct": "{}",
-    "race_reported": "",
-    "race_pct": "{}",
-    "education_reported": "",
-    "education_pct": "{}",
-    "ses_reported": "",
-    "ses_value": "",
+    "gender": "",
+    "race": "",
+    "education": "",
+    "ses": "",
 }
 
 assert set(SCHEMA_FIELDS) == REQUIRED_KEYS, (
