@@ -85,6 +85,33 @@ reading from `data/corpus_index.csv` (no network). `pilot_size`,
 `min_per_subfield`, and `seed` come from `config.yaml` (`validation` /
 `sampling`); override with `--size`, `--min-per-subfield`, `--seed`.
 
+## 2a. Excluding non-human (animal-model) articles
+
+**Decision: drop any article whose PLOS subject taxonomy marks it as a
+non-human / animal-model study, before it can enter the manual-encoding
+sample or the LLM test set.** Implemented in `src/subject_filter.py`, applied
+in `src/build_corpus_index.py` (as an inclusion criterion) and again in
+`src/sample_articles.py` (as a safety net when sampling from an older index).
+
+The Psychology-node filter (decision #2) is *not* enough on its own: PLOS tags
+plenty of animal-behavior work under the same Psychology subfields we sample
+(Behavior, Instinct, ...). The first manual-encoding pilot confirmed this —
+articles on salmon, juncos, rodents, rats, bonobos, planaria, wombats,
+*Drosophila* and others came through and had to be hand-flagged, because an
+animal study has no gender / race / education / SES to encode. Left in, they
+waste coder time and, if logged as zeros, bias the representativeness trends
+and any model benchmark built on the same rows.
+
+So we filter "by subject area": a non-human study always carries a term from
+PLOS's `Organisms > Animals`, `Model organisms`, or `Zoology` branch
+(`Animals`, `Vertebrates`, `Invertebrates`, `Fish`, `Rodents`, `Animal models`,
+`Mouse models`, `Drosophila melanogaster`, `Zoology`, `Animal behavior`, ...),
+while a human study does not. An explicit human marker (`Humans` / `Homo
+sapiens`) vetoes exclusion, so a human/animal comparison whose human arm we
+want is still kept. Matching is exact-term and case-insensitive, so
+`Human factors` or a stray substring can't trip it. The curated term list is
+easy to extend as new taxa surface in later encoding rounds.
+
 ## 3. Model choice
 
 **Decision: `meta-llama/Llama-3.3-70B-Instruct`. Final — this is the only
