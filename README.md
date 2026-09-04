@@ -57,7 +57,11 @@ docs/
   RUNNING_ON_RIVANNA.md    step-by-step guide to running the full pipeline on Rivanna
   SCORING_RUBRIC.md        QA rubric for the pilot run
 slurm/                     SLURM batch scripts for every GPU/CPU stage
+scripts/                   standalone diagnostic / validation helpers (not part of the pipeline)
 tests/                     unit tests (fixture XML + mocked model calls, no GPU/network needed)
+data/                      pipeline inputs and outputs (gitignored; .gitkeep only)
+results/                   pilot / run outputs (gitignored; .gitkeep only)
+archive/                   dated snapshots and the curated sharing copy — see archive/README.md
 ```
 
 ## Running it

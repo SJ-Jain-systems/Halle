@@ -23,7 +23,7 @@ pipeline classifies or what data it collects.
 
 | # | Item | Kind | Files |
 |---|------|------|-------|
-| 1 | Trim the redundant breakdown in section 8 | Report prose | `docs/project_report.qmd`, `sharing/project_report.qmd` |
+| 1 | Trim the redundant breakdown in section 8 | Report prose | `docs/project_report.qmd`, `archive/sharing/project_report.qmd` |
 | 2 | Broaden the 2015 diagnostic substring `psycholog` → `psych` | Diagnostic + prose | `scripts/diagnose_2015.py`, both report copies |
 | 3 | Ground-truth template + scoring script | New tooling | `src/make_gold_template.py`, `src/score_pilot.py`, `docs/SCORING_RUBRIC.md`, tests |
 
@@ -62,7 +62,7 @@ This is a prose edit only. The percentages themselves remain part of the schema
 and are still collected and used downstream: `analyze_trends.py::mean_subgroup_pct`
 computes the mean of each subgroup percentage (e.g. mean % female) among reporting
 samples. Nothing about the extraction or the analysis changed. The edit was
-applied identically to both the `docs/` report and the curated `sharing/` copy.
+applied identically to both the `docs/` report and the curated `archive/sharing/` copy.
 
 # Item 2 — Broaden the diagnostic substring `psycholog` → `psych`
 
