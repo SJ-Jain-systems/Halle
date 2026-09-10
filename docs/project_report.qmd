@@ -89,7 +89,7 @@ stage consumes:
 
 ```
 1. Enumerate qualifying psychology articles  ->  master index (58,467 articles)  [DONE]
-2. Draw a stratified pilot sample            ->  46 articles                      [DONE]
+2. Draw a stratified pilot sample            ->  100 articles                     [DONE]
 3. Run the model over the pilot              ->  extracted demographics            [NEXT]
 4. Adjudicate pilot accuracy by hand         ->  proceed / revise decision
 5. Run the model over the full index         ->  full demographics table
@@ -376,7 +376,7 @@ def stratified_sample(articles, per_subfield=2, seed=42):
     return picked
 ```
 
-The realized sample comprises 46 articles spanning the 23 subfields listed
+The realized sample comprises 100 articles spanning the 23 subfields listed
 earlier.
 
 # Decision 3: model selection
@@ -438,14 +438,167 @@ the study's answer: whether demographic reporting in psychology is improving, an
 how the trajectory differs across the early, middle, COVID, and post-COVID
 periods.
 
+# Pilot validation results
+
+Before committing GPU time to all 58,467 articles, the model's extraction is
+validated on the 100-article pilot against a hand-coded gold set. For each
+demographic's *reported* flag the human gold is the truth and the model is the
+classifier; the gate is recall, precision, and accuracy each at least 0.90, per
+variable and overall (`docs/SCORING_RUBRIC.md`, `config.yaml`
+`validation.thresholds`). The tables below read directly from the scorer's
+output (`results/pilot_metrics.csv`, `results/pilot_accuracy.csv`) and populate
+once `src/score_pilot.py` has run.
+
+## The gold set
+
+```{python}
+#| echo: false
+#| output: asis
+import csv, os
+
+GOLD = "data/pilot_gold.csv"
+if not os.path.exists(GOLD):
+    print("*`data/pilot_gold.csv` not found from this working directory.*")
+else:
+    rows = list(csv.DictReader(open(GOLD, encoding="utf-8")))
+
+    def flag(v):
+        v = (v or "").strip()
+        if not v:
+            return 0
+        tok = v.split(",")[0].strip()
+        try:
+            return int(float(tok))
+        except ValueError:
+            return 0
+
+    n = len(rows)
+    arts = len({r["doi"].strip() for r in rows if r["doi"].strip()})
+    subs = len({r["subfield"].strip() for r in rows if r["subfield"].strip()})
+    print(
+        f"The gold set is **{arts} articles / {n} participant samples** across "
+        f"**{subs} psychology subfields**, hand-coded by four coders (25 "
+        f"articles each). Reporting rate is the share of samples in which the "
+        f"demographic is reported at all.\n"
+    )
+    print("| Demographic | Samples reporting it | Reporting rate |")
+    print("|---|---|---|")
+    for var, label in [
+        ("gender", "Gender"),
+        ("race", "Race / ethnicity"),
+        ("education", "Education"),
+        ("ses", "SES"),
+    ]:
+        rep = sum(1 for r in rows if flag(r.get(var)) >= 1)
+        print(f"| {label} | {rep}/{n} | {rep / n:.2f} |")
+```
+
+SES is expected to be sparse — most articles omit it — so its high accuracy in
+the gate below reflects many true negatives, not good coverage.
+
+## The gate: recall / precision / accuracy
+
+```{python}
+#| echo: false
+#| output: asis
+import csv, os
+
+METRICS = "results/pilot_metrics.csv"
+if not os.path.exists(METRICS):
+    print(
+        "*Pilot not yet scored. This table auto-populates from "
+        "`results/pilot_metrics.csv` once `src/score_pilot.py` has run "
+        "against the completed pilot output.*"
+    )
+else:
+    def num(x):
+        try:
+            return f"{float(x):.3f}"
+        except (TypeError, ValueError):
+            return str(x)
+
+    def yes(x):
+        return "yes" if str(x).strip().lower() in ("true", "1", "yes") else "no"
+
+    rows = list(csv.DictReader(open(METRICS, encoding="utf-8")))
+    print("| Variable | Recall | Precision | Accuracy | F1 | Passes 0.90 gate |")
+    print("|---|---|---|---|---|---|")
+    for r in rows:
+        print(
+            f"| {r['variable']} | {num(r['recall'])} | {num(r['precision'])} "
+            f"| {num(r['accuracy'])} | {num(r.get('f1'))} | {yes(r.get('passed'))} |"
+        )
+```
+
+## Verdict and secondary axes
+
+```{python}
+#| echo: false
+#| output: asis
+import csv, os
+
+METRICS = "results/pilot_metrics.csv"
+ACC = "results/pilot_accuracy.csv"
+if not os.path.exists(METRICS):
+    print("*Verdict pending the scored pilot.*")
+else:
+    overall = [
+        r for r in csv.DictReader(open(METRICS, encoding="utf-8"))
+        if r["variable"] == "overall"
+    ]
+    passed = bool(overall) and str(overall[0].get("passed", "")).strip().lower() in (
+        "true", "1", "yes",
+    )
+    if passed:
+        print(
+            "**PASS.** Every variable and the overall micro-average clear the "
+            "0.90 gate, so the extraction is validated and the full-corpus run "
+            "is justified.\n"
+        )
+    else:
+        print(
+            "**Does not pass.** At least one variable misses the 0.90 gate. The "
+            "signal is to debug the extraction prompt "
+            "(`src/extract_demographics.py`) and re-run the pilot, not to scale "
+            "up — errors here propagate directly into the trend estimates.\n"
+        )
+    if os.path.exists(ACC):
+        rows = list(csv.DictReader(open(ACC, encoding="utf-8")))
+
+        def mean(k):
+            vals = [
+                float(r[k]) for r in rows
+                if r.get(k) not in (None, "", "NA")
+            ]
+            return sum(vals) / len(vals) if vals else float("nan")
+
+        def count(k):
+            return sum(
+                1 for r in rows
+                if str(r.get(k)).strip().lower() in ("true", "1", "yes")
+            )
+
+        print(f"- Mean numeric accuracy: {mean('numeric_accuracy'):.2f}")
+        print(f"- Schema-valid articles: {count('schema_ok')}/{len(rows)}")
+        print(f"- Sample-count match: {count('sample_count_match')}/{len(rows)}")
+```
+
+Two caveats attach to this validation. The gold set is single-coded (one coder
+per article, four coders splitting the 100), so no inter-rater agreement is
+reported; the consensus workflow in `docs/SCORING_RUBRIC.md` is available if a
+second blind pass is added. And percentage comparisons allow a small rounding
+tolerance, since coders and the model transcribe reported figures to differing
+precision.
+
 # Status
 
 | Stage | Status |
 |-------|--------|
 | Master index of 58,467 psychology articles (2010 to 2026), gap-free | Done |
-| 46-article stratified pilot across 23 subfields | Done |
-| Run the pilot through Llama-3.3-70B | Next |
-| Manual adjudication of pilot accuracy | Pending |
+| 100-article stratified pilot across 23 subfields | Done |
+| Manual gold coding of the pilot (four coders) | Done |
+| Run the pilot through Llama-3.3-70B | In progress |
+| Score the pilot against the gold (0.90 recall/precision/accuracy gate) | Next |
 | Full extraction over all 58,467 articles | Pending |
 | Trend aggregation (the findings) | Pending |
 
