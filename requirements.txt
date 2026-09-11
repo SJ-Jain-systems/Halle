@@ -18,3 +18,8 @@ allofplos>=0.11
 torch>=2.3
 vllm>=0.5
 transformers>=4.43
+# transformers 5.x hard-imports scikit-learn (assisted-generation path), which
+# needs scipy; without it the import fails and vLLM won't load. Pin both so a
+# fresh env doesn't reproduce that failure.
+scikit-learn>=1.3
+scipy>=1.11
