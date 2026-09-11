@@ -170,16 +170,68 @@ def build_prompt(doi: str, article_text: str) -> str:
     return EXTRACTION_PROMPT_TEMPLATE.format(doi=doi, article_text=article_text)
 
 
+def _extract_json_array(raw: str) -> str:
+    """Best-effort pull of the JSON array out of a model response that may wrap
+    it in markdown fences or surrounding prose (instruct models often do, even
+    when told to emit only JSON). Strips a leading/trailing ``` fence, then
+    returns the first balanced top-level ``[...]`` span, ignoring brackets
+    inside strings. Falls back to the stripped text so json.loads still raises a
+    clear error when there's no array to find.
+    """
+    s = (raw or "").strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```[A-Za-z0-9_-]*[ \t]*\r?\n", "", s)
+        s = re.sub(r"\r?\n```[ \t]*$", "", s).strip()
+    start = s.find("[")
+    if start == -1:
+        return s
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(s)):
+        c = s[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c == "[":
+            depth += 1
+        elif c == "]":
+            depth -= 1
+            if depth == 0:
+                return s[start : i + 1]
+    return s[start:]
+
+
 def parse_and_validate(raw_output: str, expected_doi: str) -> list[dict]:
     """Parse a model's raw text response into validated demographic rows.
 
     Raises ExtractionValidationError on malformed JSON or a missing/mismatched
     required field, rather than silently returning partial/garbage rows —
-    correctness of this data feeds directly into the research analysis.
+    correctness of this data feeds directly into the research analysis. The
+    offending raw text is attached to the exception as ``raw_output`` so callers
+    (src/run_pilot.py) can record it for debugging.
     """
     try:
-        rows = json.loads(raw_output)
-    except json.JSONDecodeError as exc:
+        return _parse_and_validate(raw_output, expected_doi)
+    except ExtractionValidationError as exc:
+        if not hasattr(exc, "raw_output"):
+            exc.raw_output = raw_output
+        raise
+
+
+def _parse_and_validate(raw_output: str, expected_doi: str) -> list[dict]:
+    payload = _extract_json_array(raw_output)
+    try:
+        rows = json.loads(payload)
+    except (json.JSONDecodeError, RecursionError) as exc:
+        # RecursionError: a degenerate generation (runaway nested brackets) that
+        # json's recursive decoder can't handle — treat it as malformed output.
         raise ExtractionValidationError(f"Model output was not valid JSON: {exc}") from exc
 
     if not isinstance(rows, list):

@@ -87,6 +87,11 @@ def run_pilot(
         except ExtractionValidationError as exc:
             logger.warning("Extraction failed for %s: %s", doi, exc)
             result = {"doi": doi, "model": model_id, "status": "error", "error": str(exc)}
+            raw = getattr(exc, "raw_output", None)
+            if raw is not None:
+                # Keep the raw generation (truncated) so parsing failures are
+                # diagnosable without another GPU run.
+                result["raw_output"] = raw[:4000]
             counts["error"] += 1
         except Exception as exc:  # keep going: one bad article must not kill the job
             logger.exception("Unexpected error extracting %s", doi)
