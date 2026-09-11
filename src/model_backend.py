@@ -20,8 +20,13 @@ import json
 import re
 from dataclasses import dataclass, field
 
-DEFAULT_MAX_NEW_TOKENS = 2048
+DEFAULT_MAX_NEW_TOKENS = 3072
 DEFAULT_TEMPERATURE = 0.0  # deterministic extraction, not creative generation
+# Greedy decoding on this task can degenerate into repeated filler ("I hope
+# this helps...") that runs to the token cap and breaks JSON parsing. A mild
+# frequency penalty curbs that loop without meaningfully distorting the short,
+# structured JSON we want.
+DEFAULT_FREQUENCY_PENALTY = 0.4
 
 
 @dataclass
@@ -37,6 +42,7 @@ class VLLMModelClient:
     tensor_parallel_size: int = 1
     max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS
     temperature: float = DEFAULT_TEMPERATURE
+    frequency_penalty: float = DEFAULT_FREQUENCY_PENALTY
     dtype: str = "bfloat16"
     _llm: object = field(default=None, init=False, repr=False)
 
@@ -58,7 +64,11 @@ class VLLMModelClient:
         from vllm import SamplingParams
 
         llm = self._load()
-        params = SamplingParams(temperature=self.temperature, max_tokens=self.max_new_tokens)
+        params = SamplingParams(
+            temperature=self.temperature,
+            max_tokens=self.max_new_tokens,
+            frequency_penalty=self.frequency_penalty,
+        )
         outputs = llm.generate(prompts, params)
         # vLLM does not guarantee output order matches input order; sort by
         # the prompt's original request index it attaches internally.

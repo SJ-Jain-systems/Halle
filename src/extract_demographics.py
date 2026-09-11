@@ -68,6 +68,13 @@ isn't (for ses: 0 = not reported, 1 = category only such as low/medium/high,
 2 = reported with a specific numeric threshold). Set `pct` to {{}} when
 `reported` is 0.
 
+Output ONLY the JSON array. No explanation, no markdown fences, no commentary,
+and nothing after the closing ]. Do not repeat text. Your entire response must
+start with [ and end with ]. Example of the exact format (one sample, values
+illustrative):
+
+[{{"doi": "{doi}", "sample_id": 1, "gender": {{"reported": 1, "pct": {{"male": 40, "female": 60}}}}, "race": {{"reported": 0, "pct": {{}}}}, "education": {{"reported": 0, "pct": {{}}}}, "ses": {{"reported": 0, "value": null}}}}]
+
 Article DOI: {doi}
 
 Article text:
@@ -225,14 +232,37 @@ def parse_and_validate(raw_output: str, expected_doi: str) -> list[dict]:
         raise
 
 
+def _repair_truncated_array(payload: str) -> list | None:
+    """Salvage a JSON array truncated mid-object (the model hit the token cap
+    before closing the array): drop the trailing incomplete element and close
+    at the last complete object. Returns the parsed list, or None if nothing
+    recoverable."""
+    s = payload.strip()
+    if not s.startswith("["):
+        return None
+    for m in reversed([mm.start() for mm in re.finditer(r"\}", s)][-80:]):
+        candidate = s[: m + 1].rstrip().rstrip(",").rstrip() + "]"
+        try:
+            value = json.loads(candidate)
+        except (json.JSONDecodeError, RecursionError):
+            continue
+        if isinstance(value, list) and value:
+            return value
+    return None
+
+
 def _parse_and_validate(raw_output: str, expected_doi: str) -> list[dict]:
     payload = _extract_json_array(raw_output)
     try:
         rows = json.loads(payload)
     except (json.JSONDecodeError, RecursionError) as exc:
+        # The model wrapped, rambled past, or (at the token cap) truncated its
+        # array. Try to salvage the complete leading objects before giving up.
         # RecursionError: a degenerate generation (runaway nested brackets) that
         # json's recursive decoder can't handle — treat it as malformed output.
-        raise ExtractionValidationError(f"Model output was not valid JSON: {exc}") from exc
+        rows = _repair_truncated_array(payload)
+        if rows is None:
+            raise ExtractionValidationError(f"Model output was not valid JSON: {exc}") from exc
 
     if not isinstance(rows, list):
         raise ExtractionValidationError("Expected a JSON array of sample rows")
