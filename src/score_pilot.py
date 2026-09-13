@@ -31,6 +31,7 @@ import argparse
 import csv
 import json
 import os
+import re
 from collections import defaultdict
 
 from src.extract_demographics import (
@@ -48,10 +49,19 @@ PCT_DEMOGRAPHICS = list(PCT_FIELDS)     # gender, race, education
 DEFAULT_THRESHOLDS = {"recall": 0.90, "precision": 0.90, "accuracy": 0.90}
 
 
+_NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+
 def _num(x) -> float:
+    """Best-effort numeric value. SES thresholds are hand-coded as free text
+    (e.g. "< RM 4,359", "$30,000"), so pull the first number out rather than
+    assuming a clean float. No number found -> 0.0."""
     if x is None or x == "":
         return 0.0
-    return float(x)
+    if isinstance(x, (int, float)):
+        return float(x)
+    m = _NUM_RE.search(str(x).replace(",", ""))
+    return float(m.group()) if m else 0.0
 
 
 def _to_int(x):
