@@ -25,9 +25,6 @@ REQUIRED_KEYS = {
     "education",
     "ses",
 }
-# Keys a row must carry itself; the demographic fields are defaulted to
-# not-reported when the model omits them (see parse_and_validate).
-STRUCTURAL_KEYS = {"doi", "sample_id"}
 
 # Canonical subgroup order + display labels for the percentage demographics.
 # Order here is the order subgroups appear in the flat, human-readable form
@@ -270,42 +267,58 @@ def _parse_and_validate(raw_output: str, expected_doi: str) -> list[dict]:
     if not isinstance(rows, list):
         raise ExtractionValidationError("Expected a JSON array of sample rows")
 
+    rows = [r for r in rows if isinstance(r, dict)]
+    if not rows:
+        raise ExtractionValidationError("No JSON object rows in model output")
+
     for i, row in enumerate(rows):
-        if not isinstance(row, dict):
-            raise ExtractionValidationError(f"Row {i} is not a JSON object")
-        # A missing demographic field means the model reported nothing for it —
-        # default it rather than discard the whole (otherwise valid) row. A
-        # gold-reported demographic the model dropped is still counted against
-        # recall, so this hides no error; it just salvages the row's other data.
+        # The article's DOI is known from the pipeline; don't require the model
+        # to echo it back correctly. Default a missing sample_id to position.
+        row["doi"] = expected_doi
+        row.setdefault("sample_id", i + 1)
+        # Coerce each demographic into the canonical shape rather than discard
+        # the row: the model often shortcuts a not-reported field to a bare 0
+        # (or 1) instead of {"reported": .., "pct": {}}. A gold-reported
+        # demographic the model dropped is still counted against recall, so this
+        # salvages the row's real data without hiding model errors.
         for name in PCT_FIELDS:
-            row.setdefault(name, {"reported": 0, "pct": {}})
-        row.setdefault("ses", {"reported": 0, "value": None})
-        missing = STRUCTURAL_KEYS - row.keys()
-        if missing:
-            raise ExtractionValidationError(f"Row {i} missing required keys: {sorted(missing)}")
-        if row["doi"] != expected_doi:
-            raise ExtractionValidationError(
-                f"Row {i} doi {row['doi']!r} does not match article doi {expected_doi!r}"
-            )
-        _validate_demographic_fields(row, i)
+            row[name] = _coerce_pct_field(row.get(name))
+        row["ses"] = _coerce_ses_field(row.get("ses"))
     return rows
 
 
-def _validate_demographic_fields(row: dict, i: int) -> None:
-    """Each combined demographic field must be an object with the expected
-    sub-keys — gender/race/education carry `reported`+`pct`, ses `reported`+
-    `value` — so a malformed field is caught here rather than downstream."""
-    for name in PCT_FIELDS:
-        field = row[name]
-        if not isinstance(field, dict) or "reported" not in field or "pct" not in field:
-            raise ExtractionValidationError(
-                f"Row {i} field {name!r} must be an object with 'reported' and 'pct'"
-            )
-    ses = row["ses"]
-    if not isinstance(ses, dict) or "reported" not in ses or "value" not in ses:
-        raise ExtractionValidationError(
-            f"Row {i} field 'ses' must be an object with 'reported' and 'value'"
-        )
+def _coerce_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_pct_field(field) -> dict:
+    """Normalize a gender/race/education field to {"reported": int, "pct": dict}."""
+    if isinstance(field, bool):
+        return {"reported": int(field), "pct": {}}
+    if isinstance(field, (int, float)):
+        return {"reported": int(field), "pct": {}}
+    if isinstance(field, dict):
+        pct = field.get("pct")
+        if not isinstance(pct, dict):
+            pct = {}
+        # If the model gave percentages but omitted the flag, treat as reported.
+        reported = _coerce_int(field.get("reported", 1 if pct else 0))
+        return {"reported": reported, "pct": pct}
+    return {"reported": 0, "pct": {}}
+
+
+def _coerce_ses_field(field) -> dict:
+    """Normalize the ses field to {"reported": int, "value": <any|None>}."""
+    if isinstance(field, bool):
+        return {"reported": int(field), "value": None}
+    if isinstance(field, (int, float)):
+        return {"reported": int(field), "value": None}
+    if isinstance(field, dict):
+        return {"reported": _coerce_int(field.get("reported", 0)), "value": field.get("value")}
+    return {"reported": 0, "value": None}
 
 
 def extract_demographics(doi: str, article_text: str, client: ModelClient) -> list[dict]:

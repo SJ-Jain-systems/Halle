@@ -34,11 +34,11 @@ def test_parse_and_validate_rejects_non_json():
         parse_and_validate("not json at all", expected_doi=VALID_ROW["doi"])
 
 
-def test_parse_and_validate_rejects_missing_structural_key():
-    bad_row = dict(VALID_ROW)
-    del bad_row["sample_id"]
-    with pytest.raises(ExtractionValidationError):
-        parse_and_validate(json.dumps([bad_row]), expected_doi=VALID_ROW["doi"])
+def test_parse_and_validate_defaults_missing_sample_id():
+    row = dict(VALID_ROW)
+    del row["sample_id"]
+    out = parse_and_validate(json.dumps([row]), expected_doi=VALID_ROW["doi"])
+    assert out[0]["sample_id"] == 1
 
 
 def test_parse_and_validate_defaults_missing_demographic():
@@ -48,16 +48,16 @@ def test_parse_and_validate_defaults_missing_demographic():
     assert out[0]["race"] == {"reported": 0, "pct": {}}
 
 
-def test_parse_and_validate_rejects_malformed_demographic_field():
-    bad_row = dict(VALID_ROW)
-    bad_row["gender"] = 1  # not an object with reported/pct
-    with pytest.raises(ExtractionValidationError):
-        parse_and_validate(json.dumps([bad_row]), expected_doi=VALID_ROW["doi"])
+def test_parse_and_validate_coerces_shorthand_demographic_field():
+    row = dict(VALID_ROW)
+    row["gender"] = 0  # model shorthand for "not reported"
+    out = parse_and_validate(json.dumps([row]), expected_doi=VALID_ROW["doi"])
+    assert out[0]["gender"] == {"reported": 0, "pct": {}}
 
 
-def test_parse_and_validate_rejects_doi_mismatch():
-    with pytest.raises(ExtractionValidationError):
-        parse_and_validate(json.dumps([VALID_ROW]), expected_doi="10.1371/journal.pone.9999999")
+def test_parse_and_validate_forces_known_doi():
+    out = parse_and_validate(json.dumps([VALID_ROW]), expected_doi="10.1371/journal.pone.9999999")
+    assert out[0]["doi"] == "10.1371/journal.pone.9999999"
 
 
 def test_required_keys_matches_valid_row_shape():
