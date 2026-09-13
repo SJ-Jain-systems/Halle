@@ -45,8 +45,21 @@ DEMOGRAPHIC_FIELDS = ("gender", "race", "education", "ses")
 
 EXTRACTION_PROMPT_TEMPLATE = """\
 You are coding a psychology research article for a systematic review of
-demographic reporting. Read the article text below and, for EACH distinct
-participant sample described (an article may report more than one), extract:
+demographic reporting. Read the article text below and extract the demographics
+of the participant sample(s).
+
+Number of samples: report ONE sample for the article in almost all cases, with
+the demographics of the overall participant pool. Create more than one sample
+ONLY when the article studies two or more clearly separate groups of people that
+each have their own separately reported demographics (for example a patient
+group versus a control group, or two experiments run on different participants).
+Do NOT split a single participant pool into multiple samples by subgroup,
+condition, experimental wave, gender, or any other breakdown. When unsure, use
+one sample.
+
+Only mark a demographic as reported (1) when the article explicitly states it or
+gives numbers for it for that sample. If it is not clearly reported, mark 0 —
+do not infer or guess. For each sample extract:
 
 - gender: reported? (0/1), and percentage breakdown if reported (male/female/other)
 - race: reported? (0/1), and percentage breakdown if reported (white/black/hispanic/asian/other)
