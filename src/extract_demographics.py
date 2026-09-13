@@ -25,6 +25,9 @@ REQUIRED_KEYS = {
     "education",
     "ses",
 }
+# Keys a row must carry itself; the demographic fields are defaulted to
+# not-reported when the model omits them (see parse_and_validate).
+STRUCTURAL_KEYS = {"doi", "sample_id"}
 
 # Canonical subgroup order + display labels for the percentage demographics.
 # Order here is the order subgroups appear in the flat, human-readable form
@@ -270,7 +273,14 @@ def _parse_and_validate(raw_output: str, expected_doi: str) -> list[dict]:
     for i, row in enumerate(rows):
         if not isinstance(row, dict):
             raise ExtractionValidationError(f"Row {i} is not a JSON object")
-        missing = REQUIRED_KEYS - row.keys()
+        # A missing demographic field means the model reported nothing for it —
+        # default it rather than discard the whole (otherwise valid) row. A
+        # gold-reported demographic the model dropped is still counted against
+        # recall, so this hides no error; it just salvages the row's other data.
+        for name in PCT_FIELDS:
+            row.setdefault(name, {"reported": 0, "pct": {}})
+        row.setdefault("ses", {"reported": 0, "value": None})
+        missing = STRUCTURAL_KEYS - row.keys()
         if missing:
             raise ExtractionValidationError(f"Row {i} missing required keys: {sorted(missing)}")
         if row["doi"] != expected_doi:

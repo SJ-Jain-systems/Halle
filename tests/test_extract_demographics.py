@@ -34,11 +34,18 @@ def test_parse_and_validate_rejects_non_json():
         parse_and_validate("not json at all", expected_doi=VALID_ROW["doi"])
 
 
-def test_parse_and_validate_rejects_missing_keys():
+def test_parse_and_validate_rejects_missing_structural_key():
     bad_row = dict(VALID_ROW)
-    del bad_row["race"]
+    del bad_row["sample_id"]
     with pytest.raises(ExtractionValidationError):
         parse_and_validate(json.dumps([bad_row]), expected_doi=VALID_ROW["doi"])
+
+
+def test_parse_and_validate_defaults_missing_demographic():
+    row = dict(VALID_ROW)
+    del row["race"]
+    out = parse_and_validate(json.dumps([row]), expected_doi=VALID_ROW["doi"])
+    assert out[0]["race"] == {"reported": 0, "pct": {}}
 
 
 def test_parse_and_validate_rejects_malformed_demographic_field():
