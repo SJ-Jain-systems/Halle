@@ -57,15 +57,27 @@ Do NOT split a single participant pool into multiple samples by subgroup,
 condition, experimental wave, gender, or any other breakdown. When unsure, use
 one sample.
 
-Only mark a demographic as reported (1) when the article explicitly states it or
-gives numbers for it for that sample. If it is not clearly reported, mark 0 —
-do not infer or guess. For each sample extract:
+Mark a demographic as reported (1) when the article gives concrete information
+about it for that sample: a percentage, a count, a mean, or an explicit
+statement (for example "participants were undergraduates" counts for education).
+It does not need a full percentage breakdown to count as reported. Mark 0 only
+when the article says nothing about that demographic. When it is reported but no
+percentages are given, still mark 1 and leave pct empty. For each sample:
 
-- gender: reported? (0/1), and percentage breakdown if reported (male/female/other)
-- race: reported? (0/1), and percentage breakdown if reported (white/black/hispanic/asian/other)
-- education (optional): reported? (0/1), percentage with college vs. no college if reported
-- socioeconomic status (optional): 0 = not reported, 1 = reported as a category only
-  (low/medium/high, no numbers), 2 = reported with a specific numeric threshold
+- gender: reported (0/1) if the article states participants' sex or gender in any
+  form. Percentage breakdown male/female/other when given.
+- race: reported (0/1) if the article states participants' race or ethnicity in
+  any form. Percentage breakdown white/black/hispanic/asian/other when given.
+- education (optional): reported (0/1) if the article states participants'
+  education level in any form, for example "undergraduate students", "college
+  graduates", "high school or less", or a breakdown. Map to college vs. no
+  college: current university students, undergraduates, graduate students, and
+  anyone with a college degree count as college; less than college is no college.
+- socioeconomic status (optional): 0 = not reported, 1 = reported as a category
+  only (low/middle/high income or a deprivation band, no numbers), 2 = reported
+  with specific numbers (income values or thresholds). Count SES only when the
+  article gives income, occupation-based class, or an explicit SES or deprivation
+  measure. Do NOT count education on its own as SES.
 
 Respond with ONLY a JSON array. Each element is one sample. Combine each
 demographic into a single field, with EXACTLY these keys:
