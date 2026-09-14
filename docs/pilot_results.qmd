@@ -63,7 +63,7 @@ On our side:
 
 - Revisit the education coding so we and the model are using the same categories, since a chunk of that gap is just us disagreeing on labels.
 - Reconcile the specific articles where we and the model disagree, since our gold is single coded and some of those disagreements are probably ours to fix, not the model's.
-- Decide the SES bar honestly. At 10 of 100 articles it cannot give a stable 0.90 no matter how good the model is, so we may want to report it descriptively rather than hold it to the same gate.
+- For SES we have decided to score presence only, whether an article reports it or not, and not the numeric value or detail level. It is too sparse at 10 of 100 articles to grade the value reliably, and presence is the part we actually care about. This holds now and going forward.
 
 The one thing I would not do is keep blindly rerunning and tuning to force every number over 0.90, because some of that gap is measurement, not the model.
 
@@ -73,6 +73,6 @@ Two decisions, and they set what I do next.
 
 First, which bar do we hold to? Our own stricter 0.90 on every demographic, or the tiered thresholds from the papers we actually cite? Under the literature framing we are already close, with precision the remaining gap.
 
-Second, do we want to revisit the education and SES coding, given that some of the gap looks like it is on our side?
+Second, do we want to revisit the education coding, given that some of that gap looks like it is on our side? SES is already settled: we score it on presence only, not on the numeric detail.
 
 My plan, pending your call, is one more pass on the model side (recover the four failed articles, loosen the over reporting rule, add a couple of examples), then re score. If education and SES still lag after that, it is a measurement decision, not more prompt tuning.

@@ -34,6 +34,13 @@ SES is expected to be sparse (~2/3 of articles omit it), so it carries many true
 negatives; the scorer prints the SES reported-rate alongside the metrics so a
 high SES accuracy isn't mistaken for good coverage.
 
+**SES is scored on presence only** — whether an article reports it or not — and
+not on its numeric value or 0/1/2 detail level. It is too sparse (~10% of pilot
+articles) to grade the reported value reliably, and presence is what we care
+about. This is a standing decision: `src/score_pilot.py` counts SES in the
+reported/not gate like the other demographics and does not compare the SES
+value.
+
 ## Producing the gold set (multiple coders)
 
 The gold answer is the ground truth: humans read each pilot article and hand-code

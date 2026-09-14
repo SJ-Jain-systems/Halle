@@ -283,11 +283,11 @@ def score(
                     num_correct += int(ok)
                     if not ok:
                         notes.append(f"s{sid} {name}.pct: gold={gd.get('pct')} model={md.get('pct')}")
-            gs, ms = g.get("ses") or {}, m.get("ses") or {}
-            if gs.get("reported") == 2 and ms.get("reported") == 2:
-                num_total += 1
-                ok = abs(_num(gs.get("value")) - _num(ms.get("value"))) <= tol
-                num_correct += int(ok)
+            # SES is scored on presence only (reported or not), not on its
+            # numeric value or detail level — team decision, given it is too
+            # sparse (~10% of articles) to judge the value reliably. Its
+            # reported flag is already counted in the recall/precision/accuracy
+            # gate above; nothing further is graded here.
 
         per_doi.append(
             {
