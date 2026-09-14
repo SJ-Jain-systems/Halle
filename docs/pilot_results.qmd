@@ -8,13 +8,15 @@ format:
 date: last-modified
 ---
 
-## What this is
+## How I got here
 
-Before running the model over the full PLOS ONE corpus (about 58,000 articles), I test it on a 100 article pilot. Four of us hand coded those 100 articles for whether each demographic (gender, race, education, socioeconomic status) is reported, and the percentage breakdown when it is. That hand coding is our gold standard. The model reads the same 100 articles and I score its answers against ours. If it matches us closely enough, we trust it on the full set. If not, we fix the extraction first.
+The plan for this stage was simple on paper. We hand code a sample of articles for what demographics they report, run the model over the same articles, and check whether the model agrees with us before we trust it on the whole corpus. The four of us coded 100 articles across the 23 psychology subfields, and that coding is our gold standard.
 
-The scoring uses three standard measures on each demographic's reported or not reported flag. Recall is how much of what we coded as reported the model also caught. Precision is how much of what the model flagged as reported was actually there. Accuracy is how often the model got the reported or not call right overall.
+Getting the model to actually run was the hard part. Almost all of my recent time went into that rather than the analysis. I hit a string of problems on Rivanna, and each one only showed up after I cleared the last. Package versions that did not get along and quietly blocked the model from loading. Getting gated access to Llama 3.3 70B and pulling down its weights without the download dying. Batch jobs that could not find the model until I forced the paths and told it to run offline. The model wrapping its answers in prose and looping filler text so almost nothing parsed. And the GPU nodes running out of memory trying to load a model that size. I worked through all of it, and the pilot now runs start to finish and scores against our gold set.
 
-## Results
+The scoring uses three standard measures on each demographic's reported or not reported flag. Recall is how much of what we coded as reported the model also caught. Precision is how much of what the model flagged was actually there. Accuracy is how often the model got the reported or not call right overall.
+
+## What I found
 
 | Demographic | Recall | Precision | Accuracy |
 |---|---|---|---|
@@ -26,38 +28,51 @@ The scoring uses three standard measures on each demographic's reported or not r
 
 The model split each article into the same number of participant samples we did in 91 percent of cases, and 96 of the 100 articles produced clean output that parsed correctly.
 
-## Reading it
+The pattern is consistent. The model is good at finding demographics that get reported clearly, so recall holds up. It is weaker on precision, meaning it sometimes flags a demographic as reported when the article did not really report it. Gender, the most commonly reported demographic, meets the bar on both recall and precision. Race is close. Education and SES are the soft spots.
 
-The pattern is pretty consistent. Recall is strong on the demographics that get reported clearly, so the model is good at finding what is actually there. Precision is the weaker side, meaning it sometimes flags a demographic as reported when the article did not really report it. Gender, which is the most commonly reported demographic, meets the bar on both. Race is close. Education and SES are the soft spots.
+I want to be straight about those two soft spots though, because I do not fully read them as the model failing. SES barely shows up at all. Only 10 of the 100 articles report it, so its numbers swing on four or five individual calls and are not stable at that sample size. And a good part of the education gap is a coding difference between us and the model rather than a real error. We sometimes wrote free form labels like "undergraduate and graduate" where the model used a college versus no college split, and we did not always agree on when education counts as reported.
 
-Two honest caveats on those soft spots. SES barely shows up at all, only 10 of the 100 articles report it, so its numbers, especially precision at 0.44, swing on just four or five calls and are not stable at that sample size. And a lot of the education gap is really a coding difference between us and the model rather than the model being wrong. We sometimes wrote free form labels like "undergraduate and graduate" where the model used a college versus no college split, and we did not always agree on when education counts as reported.
+One real bug I did find and fix this round was that the model had been splitting a single study into several separate samples, so one participant pool became two, three, even six. That threw off every comparison downstream and was the main thing dragging precision down. Once I constrained it to one sample per article, except where an article truly reports separate participant groups, sample matching went from 0.47 to 0.91 and precision came up with it.
 
-## The fix this round
+## Are these numbers good enough
 
-The big improvement was structural. The model had been splitting a single study into several separate samples, so one participant pool would become two, three, even six. That threw off every comparison downstream and was the main thing dragging precision down. Once I constrained it to one sample per article, except when an article truly reports separate participant groups, sample matching went from 0.47 to 0.91 and precision came up with it.
-
-## The threshold question
-
-We set a single 0.90 bar on all three measures. On that bar the pilot does not pass yet. But that 0.90 was our own choice, and we set it deliberately higher than what our source papers actually report. The references note says as much: it was "chosen so we don't cite a threshold below what these papers already report."
+We set a single 0.90 bar on all three measures. On that bar the pilot does not pass yet. But that 0.90 was our own choice, and we set it higher than what our source papers actually report. The references note says as much, that it was chosen so we would not cite a threshold below what these papers already report.
 
 Here is what the literature we cited actually uses, and where we land against it.
 
-| Source | Threshold it uses | Our overall result | Meets it? |
+| Source | Threshold it uses | Our overall result | Meets it |
 |---|---|---|---|
 | Benchmark paper, study information tier | recall 0.80, precision 0.90 | recall 0.84, precision 0.82 | recall yes, precision no |
 | Elicit feasibility study | accuracy about 0.87 | accuracy 0.87 | yes |
 | GPT second reviewer paper | precision about 0.91, recall about 0.89 | recall 0.84, precision 0.82 | close, a bit below |
 
-So against the actual literature rather than our rounded up bar, the model already meets the recall tier and the accuracy gate overall. Precision at 0.82 is the one axis genuinely below the roughly 0.90 the papers report. Gender clears all three published bars on its own.
+So against the real literature rather than our rounded up bar, the model already meets the recall tier and the accuracy gate overall. Precision at 0.82 is the one axis genuinely below the roughly 0.90 the papers report, and gender clears all three published bars on its own. In other words we are close to a defensible standard, with precision the main thing left to close.
 
-Precision is also the most fixable of the three. It is the over reporting, and a prompt change (only mark a demographic as reported when the article explicitly states it) plus a tighter SES definition both go straight at that.
+## If we want the numbers higher
+
+There are real levers left, and they split into things I can do on the model side and things that are really about our coding and our bar.
+
+On the model side:
+
+- Recover the four articles that errored out. Right now they count as the model finding nothing, which is a free hit to recall. A quick rerun gets them back.
+- Loosen the rule I added that tells the model to only report a demographic when it is explicit. That rule is what pushed precision up this round but cost us recall, especially on SES and race. Backing it off a notch should win recall back without giving away much precision.
+- Add a couple of worked examples to the prompt, including one where a demographic genuinely is not reported. Models like this get more consistent when they are shown the format instead of just told it.
+- Tighten how the prompt defines SES so the model stops flagging it when it is not really there, which is what is killing SES precision.
+
+On our side:
+
+- Revisit the education coding so we and the model are using the same categories, since a chunk of that gap is just us disagreeing on labels.
+- Reconcile the specific articles where we and the model disagree, since our gold is single coded and some of those disagreements are probably ours to fix, not the model's.
+- Decide the SES bar honestly. At 10 of 100 articles it cannot give a stable 0.90 no matter how good the model is, so we may want to report it descriptively rather than hold it to the same gate.
+
+The one thing I would not do is keep blindly rerunning and tuning to force every number over 0.90, because some of that gap is measurement, not the model.
 
 ## What I need from the team
 
 Two decisions, and they set what I do next.
 
-First, which bar do we hold to? Our own stricter 0.90 on every demographic, or the tiered thresholds from the papers we actually cite? Under the literature framing the model is already close to a defensible standard, with precision the remaining gap.
+First, which bar do we hold to? Our own stricter 0.90 on every demographic, or the tiered thresholds from the papers we actually cite? Under the literature framing we are already close, with precision the remaining gap.
 
-Second, do we want to revisit the education and SES coding? Some of that gap looks like it is on our side, mainly the education label mismatch and SES being too sparse to judge fairly at only 10 articles. Reconciling those would move the numbers legitimately rather than by tuning the model.
+Second, do we want to revisit the education and SES coding, given that some of the gap looks like it is on our side?
 
-My plan, pending your call, is one more pass on the model side. Recover the four failed articles, loosen the over reporting rule to win back some recall, and add a couple of worked examples to the prompt. Then re score. If education and SES still lag after that, it is a measurement decision, not more prompt tuning.
+My plan, pending your call, is one more pass on the model side (recover the four failed articles, loosen the over reporting rule, add a couple of examples), then re score. If education and SES still lag after that, it is a measurement decision, not more prompt tuning.
